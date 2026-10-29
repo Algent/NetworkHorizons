@@ -10,6 +10,7 @@ import java.util.Collection;
 import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /** Aggregation and output for the stats commands. Runs on the command thread, allocation is fine here. */
@@ -66,9 +67,9 @@ public final class TrafficReport {
     }
 
     public static String formatBytes(double bytes) {
-        if (bytes >= 1024 * 1024) return String.format("%.1f MiB", bytes / (1024 * 1024));
-        if (bytes >= 1024) return String.format("%.1f KiB", bytes / 1024);
-        return String.format("%.0f B", bytes);
+        if (bytes >= 1024 * 1024) return String.format(Locale.ROOT, "%.1f MiB", bytes / (1024 * 1024));
+        if (bytes >= 1024) return String.format(Locale.ROOT, "%.1f KiB", bytes / 1024);
+        return String.format(Locale.ROOT, "%.0f B", bytes);
     }
 
     /** Writes one CSV row per key per connection, live ones first, then the disconnected bucket. */

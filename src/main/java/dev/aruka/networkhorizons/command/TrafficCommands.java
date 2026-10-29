@@ -4,9 +4,12 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.regex.Pattern;
 
 import net.minecraft.command.CommandException;
 import net.minecraft.command.ICommandSender;
+import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.util.ChatComponentText;
 import net.minecraft.util.EnumChatFormatting;
 
@@ -22,6 +25,9 @@ import dev.aruka.networkhorizons.stats.Window;
 
 /** Actions behind {@code /neth} (server) and {@code /nethc} (client), for the connections of the side they run on. */
 public final class TrafficCommands {
+
+    // EnumChatFormatting.getTextWithoutFormattingCodes is client only
+    private static final Pattern FORMATTING = Pattern.compile("\u00a7[0-9a-fk-orA-FK-OR]");
 
     private TrafficCommands() {}
 
@@ -56,6 +62,7 @@ public final class TrafficCommands {
             send(
                 sender,
                 String.format(
+                    Locale.ROOT,
                     "%s%s %s/s, %.1f/t",
                     EnumChatFormatting.YELLOW,
                     dir == Direction.OUT ? "Sent" : "Received",
@@ -67,6 +74,7 @@ public final class TrafficCommands {
                 send(
                     sender,
                     String.format(
+                        Locale.ROOT,
                         "%s %9s/s %5.1f%% %6.2f/t %s%s",
                         EnumChatFormatting.GRAY,
                         TrafficReport.formatBytes((double) r.bytes / seconds),
@@ -105,7 +113,10 @@ public final class TrafficCommands {
         return labels;
     }
 
+    /** Colors are kept for players only: the server console and RCON print them raw. */
     static void send(ICommandSender sender, String text) {
+        if (!(sender instanceof EntityPlayer)) text = FORMATTING.matcher(text)
+            .replaceAll("");
         sender.addChatMessage(new ChatComponentText(text));
     }
 }

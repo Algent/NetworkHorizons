@@ -273,8 +273,25 @@ server can install it alone.
 - [x] Running it on a dedicated server (`runServer`) gives a stable per-channel / per-packet breakdown.
   Checked with a scripted vanilla client: totals match vanilla `/netstat` exactly once the length prefixes are removed.
   The integrated server shows nothing.
-- [ ] Same on a GTNH test server.
-- [ ] Overhead is negligible (counter updates only, no allocation per packet).
+- [x] Same on a GTNH test server (daily 804, local server + client, see below).
+- [ ] Overhead is negligible (counter updates only, no allocation per packet). Not measured yet.
+
+### Results: GTNH daily 804, local server and client (2026-10-29)
+
+One player, two logins, about 2 minutes in a developed base. `/neth dump` on the server and `/nethc dump` on the client.
+
+- **Server and client agree byte for byte** on every key both dumps cover (`FML|HS` #3 500319 B, `FORGE` #2 78201 B,
+  `REGISTER` 2541 B, the client's `FML|HS` #2 7274 B). Ongoing keys differ only by the 31 s between the two dumps.
+- **Login: about 3.5 MB per join.** BetterQuesting 1.37 MB, chunks about 0.85 MB, registry sync 500 KB,
+  then `FORGE` 78 KB, `ForgeMicroblock` 15 KB, `mobsinfo` 11 KB, `enhancedlootbags` 8.5 KB.
+- **Steady, standing in the base: about 29 KiB/s and 24 packets/tick to the client.** S35 34% (12 to 18/tick),
+  GalacticraftCore #0 (gear slot) 25% at 9/tick, MultiBlockChange 13%.
+- **GregTech:** #2 (block event) reaches 64 to 128 KB per packet, #30 (coil status) 64 KB per packet.
+- **Server list ping:** about 25 KB per `S00PacketServerInfo` (mod list). The multiplayer screen pinged 24 times
+  before joining: 582 KB.
+- **Client to server:** under 0.6 KiB/s; OpenComputers #0 is the largest at about 3/s.
+- **Side-only pitfall seen twice:** `S3FPacketCustomPayload` getters and `EnumChatFormatting.getTextWithoutFormattingCodes`
+  are `@SideOnly(CLIENT)`. Anything that runs on the server must avoid client-only vanilla methods.
 
 ### Testing
 
