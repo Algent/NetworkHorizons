@@ -274,7 +274,7 @@ server can install it alone.
   Checked with a scripted vanilla client: totals match vanilla `/netstat` exactly once the length prefixes are removed.
   The integrated server shows nothing.
 - [x] Same on a GTNH test server (daily 804, local server + client, see below).
-- [ ] Overhead is negligible (counter updates only, no allocation per packet). Not measured yet.
+- [x] Overhead is negligible (counter updates only, no allocation per packet). See "Overhead" below.
 
 ### Results: GTNH daily 804, local server and client (2026-10-29)
 
@@ -290,6 +290,25 @@ One player, two logins, about 2 minutes in a developed base. `/neth dump` on the
 - **Server list ping:** about 25 KB per `S00PacketServerInfo` (mod list). The multiplayer screen pinged 24 times
   before joining: 582 KB.
 - **Client to server:** under 0.6 KiB/s; OpenComputers #0 is the largest at about 3/s.
+### Overhead (2026-10-29)
+
+`TrafficRecorderAllocationTest` (runs with the unit tests) asserts no allocation over 200k calls on known keys.
+`./gradlew jmh` (`src/jmh`, not in the mod jar), JDK 25, one thread, 5 × 1 s after warm-up:
+
+| | Time per packet | Allocated per packet |
+|---|---|---|
+| `record`, stats on (keep-alive, GC gear payload, S35) | 44 to 46 ns | 0 B |
+| `record`, stats off | 0.4 ns | 0 B |
+| vanilla `encode`, keep-alive | 20 ns | 32 B |
+| vanilla `encode`, GC gear payload (41 B) | 50 ns | 64 B |
+| vanilla `encode`, small S35 (gzipped NBT) | 6.4 µs | 1456 B |
+
+- About the cost of encoding a tiny packet, under 1% of a tile entity update, and far below the per-packet
+  `writeAndFlush` already paid. At 25 packets/tick it is about 1 µs per player per tick, on the Netty threads.
+- Not measured: contention on `channel.attr()` (synchronized in Netty 4.0.10) with many players, and Java 8.
+  If it ever matters: keep the stats reference on the encoder/decoder instance instead of two attribute lookups,
+  and read the clock once per tick.
+
 - **Side-only pitfall seen twice:** `S3FPacketCustomPayload` getters and `EnumChatFormatting.getTextWithoutFormattingCodes`
   are `@SideOnly(CLIENT)`. Anything that runs on the server must avoid client-only vanilla methods.
 
