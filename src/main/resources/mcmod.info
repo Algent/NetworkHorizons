@@ -1,0 +1,21 @@
+{
+	"modListVersion": 2,
+	"modList": [{
+		"modid": "${modId}",
+		"name": "${modName}",
+		"description": "Network traffic measurement and optimization for modded Minecraft 1.7.10.",
+		"version": "${modVersion}",
+		"mcversion": "${minecraftVersion}",
+		"url": "",
+		"updateUrl": "",
+		"authorList": ["Algent"],
+		"credits": "",
+		"logoFile": "",
+		"screenshots": [],
+		"parent": "",
+		"requiredMods": [],
+		"dependencies": [],
+		"dependants": [],
+		"useDependencyInformation": false
+	}]
+}
