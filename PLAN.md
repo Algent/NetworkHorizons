@@ -73,7 +73,8 @@ Facts that shape the design (checked in the 1.7.10 / Forge 10.13.4.1614 sources)
   `S35PacketUpdateTileEntity` (gzip) are compressed. With Hodgepodge, some S35 NBT is sent raw (see below).
 - **Encryption is AES/CFB8.** It adds no bytes, but makes the stream incompressible downstream (VPN, WAN optimizers).
   Any compression must sit before encryption.
-- **`TCP_NODELAY` is false.** Nagle already coalesces small writes at the TCP level.
+- **`TCP_NODELAY` is false in vanilla, but true in GTNH.** Hodgepodge `tcpNoDelay` (default true) turns
+  Nagle off on both sides, so with one flush per packet, every packet becomes its own TCP segment (see phase 0).
 - **One flush per packet.** `NetworkManager.dispatchPacket` does `writeAndFlush` for every packet.
   `NetworkManager.processReceivedPackets` also calls `channel.flush()` once per connection per tick,
   from `NetworkSystem.networkTick`, called at the end of `MinecraftServer.updateTimeLightAndEntities`.
@@ -105,6 +106,7 @@ GTNH ships Hodgepodge on both sides, and it already changes parts of the wire fo
 - **Custom payloads.** The `S3FPacketCustomPayload` size cap (2097050) is configurable, and the payload
   length field is written in an extended short-or-int format. Stats must use the encoded size,
   never recompute it from the payload.
+- **TCP_NODELAY.** `SpeedupsConfig.tcpNoDelay` (default true, `MixinTcpNoDelay`) sets it on both sides.
 - **Other changes.** Channel name validation, a time budget on
   `NetworkManager.processReceivedPackets`, and null-safety around `NetworkDispatcher` / `FMLProxyPacket`.
 - **Padding fix.** The `FMLProxyPacket` padding fix (Hodgepodge PR 1032) is in progress.
@@ -115,7 +117,9 @@ Mods missing from that cache are not checked yet.
 
 ### Prior art
 
-- **Vanilla `/netstat`** (dedicated servers only). `MessageSerializer.encode` and `MessageDeserializer` feed
+- **Vanilla `/netstat`** (dedicated servers only, console/RCON only: it refuses players).
+  Subcommands: none, `read-count`, `write-count`, `most-read`, `most-write`, `hottest-read`, `hottest-write`,
+  `packet-read <id>`, `packet-write <id>`. `MessageSerializer.encode` and `MessageDeserializer` feed
   `NetworkManager.field_152462_h` (`NetworkStatistics`). Global (not per player), by vanilla packet ID,
   with all mod traffic under the one custom payload ID.
 - **Hodgepodge `/packetstats`** (client, opt-in config `trackIncomingPackets`). Counts incoming packets
@@ -125,9 +129,86 @@ Mods missing from that cache are not checked yet.
 
 Purpose: a first rough split of traffic before writing anything.
 
-- [ ] On a dedicated GTNH test server, run the vanilla `/netstat` command after a play session.
+- [ ] On a dedicated GTNH test server, run the vanilla `/netstat` command (server console) after a play session.
 - [ ] Note the share of custom payload (all mods) vs chunk data vs entity movement vs tile entity updates.
-- [ ] Optional: offline-mode server + Wireshark capture, to get wire-level totals and TCP segment counts.
+- [x] Wireshark capture of a real session (community server, online mode, so encrypted: wire level only).
+- [x] Offline-mode local server + capture. Offline mode skips encryption, so the capture can be parsed per
+  packet and per channel, and fed to the phase 2 estimator. Better than `/netstat`.
+
+### Results: community server, early base, idle (2026-10-29)
+
+Capture `Basic_Capture_Elios_Server_PDIM.pcapng`, 96 s on the game connection. Hodgepodge `/packetstats`
+taken on the same server a few minutes before.
+
+| | Server to client | Client to server |
+|---|---|---|
+| Login (first 2 s) | 2.2 MiB payload, mostly full 1460 B segments | 17 KiB (one 7 KiB burst: mod list) |
+| Steady payload | 18.8 KiB/s | 0.9 KiB/s |
+| Steady wire (Ethernet+IP+TCP) | 39.8 KiB/s, 392 segments/s | 5.8 KiB/s, 94 frames/s (mostly ACKs) |
+| Header overhead | 53% of wire bytes | 85% |
+| Segment payload size | median 41 B, 97% under 100 B | median 35 B |
+
+- **One packet per segment.** 392 segments/s matches the 19.8 packets/tick from `/packetstats`.
+  Segments come in one burst per tick (gaps of 40 to 55 ms between bursts, under 5 ms inside a burst).
+- **GalacticraftCore dominates.** `/packetstats`: 17.9 of 19.8 packets/tick (90%) are `FMLProxyPacket[GalacticraftCore]`.
+  On the wire, 45% of segments are exactly 41 B and 44% exactly 45 B: two message kinds, about 9/tick each.
+  Which GC messages, and why every tick for an idle player, is still to find (likely a mod-side fix, see "Out of scope").
+- **Flush coalescing looks like the cheapest big win.** Writing one segment per tick instead of ~20 would cut
+  server-to-client wire bytes by about half and segments by about 90%, plus most client ACKs, with no wire change.
+- **Compression:** not measurable here (encrypted). Repetitive 40 B mod packets with the channel name in each
+  suggest stream deflate would do well. Needs the offline-mode capture.
+
+### Results: local offline-mode server, endgame world, single player (2026-10-29)
+
+Capture `Basic_Capture_Boubou_Endgame_World_Offline_Server_PDIM.pcapng` (loopback, plaintext). Two sessions:
+session 1 idle (97 s after login), session 2 moving around the base (109 s after login, chunk loading).
+Parsed with throwaway Python scripts (stream reassembly, frame split, key = class or channel + first payload byte).
+Server to client only below; client to server is under 1 KiB/s.
+
+**Login (first 15 s), ~4 MB, same in both sessions:**
+
+| Source | Size | Note |
+|---|---|---|
+| `S26PacketMapChunkBulk` | 1858 KiB | already deflated |
+| `BQ_NET_CHAN` (BetterQuesting) | 1330 KiB | 76 × 18 KB, already compressed |
+| `FML\|HS` #3 (registry ID sync) | 489 KiB | one packet, compresses 2.8× |
+| `FORGE` #2 (fluid IDs) | 76 KiB | compresses 3.2× |
+
+**Steady state:**
+
+| | Session 1 (idle) | Session 2 (moving) |
+|---|---|---|
+| Rate | 8.6 KiB/s, 11.3 packets/tick | 99.7 KiB/s, 52 packets/tick |
+| Top source | GalacticraftCore #0: 84% | MapChunkBulk 36%, S35 23%, MultiBlockChange 18% |
+| GalacticraftCore #0 | 9.0/tick, 7.2 KiB/s | 8.4/tick, 6.7 KiB/s (7%) |
+| GregTech | none | #30 coil status 5.3% (24 KB avg, up to 32 KB), #2 block event 3.2%, #24 BW meta block 2.2% |
+| S35 | none | 38.6/tick; 98% are GT's Hodgepodge byte array form (27 B avg) |
+
+- **One TCP segment per packet,** confirmed: session 2 has 117159 server segments for 117156 frames.
+- **GalacticraftCore #0 is `C_UPDATE_GEAR_SLOT`,** 9 per tick, forever, even when idle. `GCPlayerHandler.checkGear`
+  calls `checkRenderGear` every tick, which sends all 9 show/hide flags with `sendToAllAround` (50 blocks),
+  unconditionally (since GC commit b46dbe763, PR #103). With N players together, each receives 9 × N packets per tick.
+  Fix in GC: send only on change or on `forceSend`.
+
+**Compression estimate (Python zlib/zstd, server to client, sizes include the framing):**
+
+| Strategy | S1 login | S1 steady | S2 login | S2 steady |
+|---|---|---|---|---|
+| Per-packet deflate ≥ 256 B (1.8 style) | 11% | −2% | 11% | 23% |
+| Stream deflate L1, flush per packet | 9% | 74% | 10% | 42% |
+| Stream deflate L6, flush per packet | 13% | 79% | 13% | 46% |
+| Stream deflate L3, flush per tick | 13% | 93% | 14% | 51% |
+| Stream zstd L3, flush per packet | 13% | 59% | 13% | 41% |
+| Stream zstd L3, flush per tick | 14% | 94% | 14% | 55% |
+
+- **Login barely compresses:** 80% of it is chunks and BetterQuesting data, both already compressed.
+- **Steady state compresses well,** mostly thanks to the context across packets (per-packet 1.8 style does almost nothing).
+  Best ratios per source in session 2: BW meta block 15×, MultiBlockChange 14×, GC gear 6×, GT coil 4×, S35 2.6×;
+  map chunks 1.06×.
+- **Flush per tick beats flush per packet,** clearly so for zstd (its per-flush overhead hurts tiny packets).
+  That favors compressing the per-tick batch from phase 3 over compressing each packet.
+- CPU numbers from Python are not meaningful for Java; measure in the mod (phase 2).
+- Caveats: one player, loopback (no real segment sizes), short sessions. Repeat with several players before deciding.
 
 ## Phase 1: traffic stats (server-only, client optional)
 
@@ -231,8 +312,8 @@ per-message compression does not depend on when Netty flushes, so this can ship 
   - the connection is not in play state;
   - the send does not come from the server thread;
   - possibly: keep-alive, chat. Decide after measuring.
-- Option to try: with explicit batching, `TCP_NODELAY = true` may now lower latency without
-  raising segment count.
+- GTNH already runs with `TCP_NODELAY = true` (Hodgepodge), so batching is the only thing grouping packets.
+  Phase 0 shows ~20 segments per tick that this would merge into one or two.
 
 ### Measure
 
@@ -339,6 +420,14 @@ Things found while looking at GregTech, to fix there, not here:
 - `GTBlockEventTracker` and `GTCoilTracker` broadcast to the whole dimension (`sendToWorld`)
   instead of to players watching the chunk.
 - Compact encodings for GT block event and coil packets (chunk-relative coordinates, deltas, varints).
+  Coil status packets reach 24 to 32 KB each (phase 0).
+
+Found in Galacticraft and Hodgepodge (phase 0):
+
+- **GC:** `checkRenderGear` sends 9 `C_UPDATE_GEAR_SLOT` packets per player per tick to everyone within 50 blocks.
+- **Hodgepodge:** `PooledGzipOutputStream` writes a wrong gzip trailer (CRC and size). `DeflaterOutputStream.write(int)`
+  calls the overridden `write(byte[], int, int)`, so single-byte writes are counted twice. Harmless today because
+  `PooledGzipInputStream` does not check the trailer, but any standard gzip reader rejects that NBT.
 
 ## Open questions
 
@@ -348,6 +437,6 @@ Things found while looking at GregTech, to fix there, not here:
 - Do we also compress client to server? Probably not worth it; phase 1 will tell.
 - Are proxies between client and server used at all in the GTNH community? Decides how much phase 4
   needs to care.
-- How big is the login cost (FML handshake and registry ID sync) for a GTNH client? Phase 1 will tell,
-  and it may be worth a target of its own.
+- How big is the login cost (FML handshake and registry ID sync) for a GTNH client? Phase 0: about 4 MB,
+  mostly chunks and BetterQuesting data (both already compressed); the registry sync is 489 KiB.
 - Hodgepodge findings were checked against 2.7.216; re-check against the current version before phase 4.
