@@ -22,6 +22,6 @@ public abstract class MixinMessageSerializer {
         at = @At("TAIL"),
         remap = false)
     private void networkhorizons$countEncoded(ChannelHandlerContext ctx, Packet packet, ByteBuf out, CallbackInfo ci) {
-        TrafficRecorder.record(ctx.channel(), Direction.OUT, packet, out.readableBytes());
+        TrafficRecorder.record(ctx.channel(), Direction.OUT, packet, out, out.readerIndex(), out.readableBytes());
     }
 }

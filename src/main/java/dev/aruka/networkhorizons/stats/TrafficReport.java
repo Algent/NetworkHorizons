@@ -73,11 +73,13 @@ public final class TrafficReport {
     }
 
     /** Writes one CSV row per key per connection, live ones first, then the disconnected bucket. */
-    public static File dump(File dir, String side) throws IOException {
+    public static String timestamp() {
+        return new SimpleDateFormat("yyyyMMdd-HHmmss").format(new Date());
+    }
+
+    public static File dump(File dir, String side, String timestamp) throws IOException {
         if (!dir.isDirectory() && !dir.mkdirs()) throw new IOException("Cannot create " + dir);
-        File file = new File(
-            dir,
-            "traffic-" + side + "-" + new SimpleDateFormat("yyyyMMdd-HHmmss").format(new Date()) + ".csv");
+        File file = new File(dir, "traffic-" + side + "-" + timestamp + ".csv");
         int now = TrafficRecorder.nowSeconds();
         try (PrintWriter w = new PrintWriter(file, StandardCharsets.UTF_8.name())) {
             w.println(

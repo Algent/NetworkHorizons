@@ -14,8 +14,10 @@ import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.builder.RequiredArgumentBuilder;
+import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
 
+import dev.aruka.networkhorizons.config.EstimatorConfig;
 import dev.aruka.networkhorizons.config.StatsConfig;
 import dev.aruka.networkhorizons.stats.Window;
 
@@ -25,8 +27,16 @@ public final class NetworkHorizonsCommand {
     public static final String NAME = "neth";
     private static final String ARG_TOP = "top";
     private static final String ARG_PLAYER = "player";
+    private static final String ARG_SECONDS = "seconds";
+    private static final String ALL = "all";
 
     private static final SuggestionProvider<ICommandSender> CONNECTIONS = (ctx, builder) -> {
+        for (String label : TrafficCommands.connectionLabels()) builder.suggest(label);
+        return builder.buildFuture();
+    };
+
+    private static final SuggestionProvider<ICommandSender> CONNECTIONS_OR_ALL = (ctx, builder) -> {
+        builder.suggest(ALL);
         for (String label : TrafficCommands.connectionLabels()) builder.suggest(label);
         return builder.buildFuture();
     };
@@ -64,8 +74,42 @@ public final class NetworkHorizonsCommand {
                         return Command.SINGLE_SUCCESS;
                     })
                     .then(stats)
+                    .then(estimate())
                     .then(literal("dump").executes(ctx -> TrafficCommands.dump(ctx.getSource(), false, baseDir.get())))
                     .then(literal("reset").executes(ctx -> TrafficCommands.reset(ctx.getSource()))));
+    }
+
+    /** {@code estimate [start <player|all> [seconds] | stop [player] | <player>]} */
+    private static LiteralArgumentBuilder<ICommandSender> estimate() {
+        return literal("estimate").executes(ctx -> EstimateCommands.show(ctx.getSource(), false, null))
+            .then(
+                literal("start").then(
+                    argument(ARG_PLAYER, StringArgumentType.word()).suggests(CONNECTIONS_OR_ALL)
+                        .executes(
+                            ctx -> EstimateCommands
+                                .start(ctx.getSource(), false, playerOrAll(ctx), EstimatorConfig.defaultSeconds))
+                        .then(
+                            argument(ARG_SECONDS, IntegerArgumentType.integer(10, 86400)).executes(
+                                ctx -> EstimateCommands.start(
+                                    ctx.getSource(),
+                                    false,
+                                    playerOrAll(ctx),
+                                    IntegerArgumentType.getInteger(ctx, ARG_SECONDS))))))
+            .then(
+                literal("stop").executes(ctx -> EstimateCommands.stop(ctx.getSource(), false, null))
+                    .then(
+                        argument(ARG_PLAYER, StringArgumentType.word()).suggests(CONNECTIONS_OR_ALL)
+                            .executes(ctx -> EstimateCommands.stop(ctx.getSource(), false, playerOrAll(ctx)))))
+            .then(
+                argument(ARG_PLAYER, StringArgumentType.word()).suggests(CONNECTIONS)
+                    .executes(
+                        ctx -> EstimateCommands
+                            .show(ctx.getSource(), false, StringArgumentType.getString(ctx, ARG_PLAYER))));
+    }
+
+    private static String playerOrAll(CommandContext<ICommandSender> ctx) {
+        String player = StringArgumentType.getString(ctx, ARG_PLAYER);
+        return ALL.equalsIgnoreCase(player) ? null : player;
     }
 
     /** Player argument; uses the top argument when {@code topArg} is not null. */

@@ -32,7 +32,7 @@ public final class TrafficStats {
         this.createdSeconds = createdSeconds;
     }
 
-    public void record(Direction dir, EnumConnectionState state, Packet packet, int size, int nowSeconds) {
+    public PacketStats record(Direction dir, EnumConnectionState state, Packet packet, int size, int nowSeconds) {
         String channel = null;
         byte[] data = null;
         if (packet instanceof S3FPacketCustomPayloadAccessor) {
@@ -51,7 +51,9 @@ public final class TrafficStats {
         }
 
         int subId = channel != null && data != null && data.length > 0 ? data[0] & 0xFF : PacketStats.NO_SUB_ID;
-        get(dir, state, packet.getClass(), channel, subId).add(nowSeconds, size);
+        PacketStats stats = get(dir, state, packet.getClass(), channel, subId);
+        stats.add(nowSeconds, size);
+        return stats;
     }
 
     private PacketStats get(Direction dir, EnumConnectionState state, Class<?> packetClass, String channel, int subId) {

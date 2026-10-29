@@ -10,6 +10,9 @@ import net.minecraft.network.NetworkManager;
 import net.minecraft.network.Packet;
 
 import dev.aruka.networkhorizons.config.StatsConfig;
+import dev.aruka.networkhorizons.estimate.Estimator;
+import dev.aruka.networkhorizons.estimate.EstimatorSession;
+import io.netty.buffer.ByteBuf;
 import io.netty.channel.Channel;
 import io.netty.util.AttributeKey;
 
@@ -37,15 +40,29 @@ public final class TrafficRecorder {
         return resetSeconds;
     }
 
-    /** Called on the channel's event loop, once per encoded or decoded packet. */
+    /** Counts a packet whose frame body is not available (tests). */
     public static void record(Channel channel, Direction dir, Packet packet, int bodySize) {
+        record(channel, dir, packet, null, 0, bodySize);
+    }
+
+    /**
+     * Called on the channel's event loop, once per encoded or decoded packet.
+     *
+     * @param buf buffer holding the frame body (packet id and data) at {@code index}, for the compression estimate
+     */
+    public static void record(Channel channel, Direction dir, Packet packet, ByteBuf buf, int index, int bodySize) {
         if (!StatsConfig.enabled) return;
         ConnectionTraffic conn = channel.attr(KEY)
             .get();
         if (conn == null) conn = register(channel);
         EnumConnectionState state = channel.attr(NetworkManager.attrKeyConnectionState)
             .get();
-        conn.stats.record(dir, state, packet, bodySize + varIntSize(bodySize), nowSeconds());
+        int now = nowSeconds();
+        PacketStats stats = conn.stats.record(dir, state, packet, bodySize + varIntSize(bodySize), now);
+        EstimatorSession estimate = conn.estimate;
+        if (estimate != null && buf != null && estimate.direction == dir) {
+            Estimator.offer(estimate, stats.label(), packet, buf, index, bodySize, now);
+        }
     }
 
     static int varIntSize(int value) {
@@ -69,6 +86,8 @@ public final class TrafficRecorder {
 
     private static void onClose(ConnectionTraffic conn) {
         live.remove(conn);
+        EstimatorSession estimate = conn.estimate;
+        if (estimate != null) Estimator.stop(estimate);
         TrafficStats target = disconnected;
         synchronized (target) {
             target.merge(conn.stats);

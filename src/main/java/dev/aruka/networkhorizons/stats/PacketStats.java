@@ -17,6 +17,8 @@ public final class PacketStats {
 
     long count;
     long bytes;
+    /** Built on first use; races only build the same string twice. */
+    private String label;
     int maxBytes;
     final RateWindow lastMinute = new RateWindow(60, 1);
     final RateWindow lastTenMinutes = new RateWindow(60, 10);
@@ -73,8 +75,12 @@ public final class PacketStats {
 
     /** Short label: packet class, or {@code [channel]#subId}, prefixed by the state outside of play. */
     public String label() {
-        String name = channel != null ? "[" + channel + "]#" + (subId == NO_SUB_ID ? "-" : subId)
-            : packetClass.getSimpleName();
-        return state == null || state == EnumConnectionState.PLAY ? name : state.name() + ":" + name;
+        String l = label;
+        if (l == null) {
+            String name = channel != null ? "[" + channel + "]#" + (subId == NO_SUB_ID ? "-" : subId)
+                : packetClass.getSimpleName();
+            label = l = state == null || state == EnumConnectionState.PLAY ? name : state.name() + ":" + name;
+        }
+        return l;
     }
 }

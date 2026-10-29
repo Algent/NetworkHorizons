@@ -373,6 +373,23 @@ Purpose: answer "would compression help, and which kind" with real traffic, stil
 - Reports ratio and CPU ns/byte per strategy.
 - A full queue drops frames and counts the drops. Drops slightly bias the stream estimates; report it.
 
+**Built (2026-10-29):**
+
+- `/neth estimate start <player|all> [seconds]`, `/neth estimate stop [player]`, `/neth estimate [player]`
+  on the server (estimates what it sends); `/nethc estimate [start [seconds] | stop]` on the client
+  (estimates what it receives, so it works on servers without the mod). Results stay after stop or disconnect,
+  latest per connection, and `/neth dump` also writes `estimate-<side>-<time>.csv`.
+- Strategies: raw, 1.8 style per packet (L6, >= 256 B), stream deflate L1 and L6 flushed per packet,
+  stream deflate L6 flushed per tick. Chunk packets (S21, S26) go raw and stay out of the stream dictionaries.
+- **Two scopes:** every frame, and every frame except `estimator.excludedKeys` (default `[GalacticraftCore]#0`),
+  so the GC gear slot bug does not inflate the result. Both are always reported.
+- Ticks: the server tick counter on servers; on clients, arrival bursts (a 10 ms gap starts a new group).
+- One daemon thread at minimum priority, unbounded queue capped by bytes (`estimator.maxQueuedMegabytes`, 64).
+  Copies happen only for estimated connections; others keep the zero allocation path.
+- Checked: on the 113k frames of the offline endgame capture (session 2, steady), the Java estimator gives the
+  same raw size as the Python tool and sizes within 0.2 to 2% (different zlib builds):
+  1.8 style 23%, stream L1 44%, stream L6 46%, stream L6 per tick 52% saved. JDK deflate CPU: 13 to 25 ns/B.
+
 ### Raw capture
 
 - Opt-in, admin-only, local file, per player, time-limited, both directions.

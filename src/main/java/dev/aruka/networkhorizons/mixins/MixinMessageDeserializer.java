@@ -23,6 +23,8 @@ public abstract class MixinMessageDeserializer {
     @Unique
     private int networkhorizons$frameSize;
     @Unique
+    private int networkhorizons$frameIndex;
+    @Unique
     private int networkhorizons$outSize;
 
     @Inject(
@@ -31,6 +33,7 @@ public abstract class MixinMessageDeserializer {
         remap = false)
     private void networkhorizons$beforeDecode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out,
         CallbackInfo ci) {
+        networkhorizons$frameIndex = in.readerIndex();
         networkhorizons$frameSize = in.readableBytes();
         networkhorizons$outSize = out.size();
     }
@@ -42,8 +45,14 @@ public abstract class MixinMessageDeserializer {
     private void networkhorizons$countDecoded(ChannelHandlerContext ctx, ByteBuf in, List<Object> out,
         CallbackInfo ci) {
         if (out.size() > networkhorizons$outSize) {
-            TrafficRecorder
-                .record(ctx.channel(), Direction.IN, (Packet) out.get(out.size() - 1), networkhorizons$frameSize);
+            // the frame is still in the buffer: decode only moved the reader index
+            TrafficRecorder.record(
+                ctx.channel(),
+                Direction.IN,
+                (Packet) out.get(out.size() - 1),
+                in,
+                networkhorizons$frameIndex,
+                networkhorizons$frameSize);
         }
     }
 }

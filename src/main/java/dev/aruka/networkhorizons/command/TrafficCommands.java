@@ -16,6 +16,7 @@ import net.minecraft.util.EnumChatFormatting;
 import com.mojang.brigadier.Command;
 
 import dev.aruka.networkhorizons.config.StatsConfig;
+import dev.aruka.networkhorizons.estimate.EstimateReport;
 import dev.aruka.networkhorizons.stats.ConnectionTraffic;
 import dev.aruka.networkhorizons.stats.Direction;
 import dev.aruka.networkhorizons.stats.TrafficRecorder;
@@ -105,8 +106,15 @@ public final class TrafficCommands {
 
     public static int dump(ICommandSender sender, boolean client, File baseDir) {
         try {
-            File file = TrafficReport.dump(new File(baseDir, "networkhorizons"), client ? "client" : "server");
-            send(sender, "Wrote " + file.getPath());
+            File dir = new File(baseDir, "networkhorizons");
+            String side = client ? "client" : "server";
+            String timestamp = TrafficReport.timestamp();
+            send(
+                sender,
+                "Wrote " + TrafficReport.dump(dir, side, timestamp)
+                    .getPath());
+            File estimates = EstimateReport.dump(dir, side, timestamp);
+            if (estimates != null) send(sender, "Wrote " + estimates.getPath());
         } catch (IOException e) {
             throw new CommandException("Dump failed: " + e.getMessage());
         }
@@ -120,7 +128,9 @@ public final class TrafficCommands {
     }
 
     public static String usage(String name) {
-        return "/" + name + " stats [60s|10m|total] [top N] [player] | dump | reset";
+        String estimate = name.equals(ClientTrafficCommand.NAME) ? "estimate [start [seconds] | stop]"
+            : "estimate [start <player|all> [seconds] | stop [player] | <player>]";
+        return "/" + name + " stats [60s|10m|total] [top N] [player] | " + estimate + " | dump | reset";
     }
 
     public static List<String> connectionLabels() {

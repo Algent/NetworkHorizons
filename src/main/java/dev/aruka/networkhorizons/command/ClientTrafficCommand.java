@@ -10,6 +10,7 @@ import net.minecraft.command.WrongUsageException;
 
 import com.gtnewhorizon.gtnhlib.commands.GTNHClientCommand;
 
+import dev.aruka.networkhorizons.config.EstimatorConfig;
 import dev.aruka.networkhorizons.config.StatsConfig;
 import dev.aruka.networkhorizons.stats.Window;
 
@@ -45,6 +46,17 @@ public class ClientTrafficCommand extends GTNHClientCommand {
                 TrafficCommands.stats(sender, true, player, top, window);
                 break;
             }
+            case "estimate":
+                if (args.length >= 2 && "start".equals(args[1])) {
+                    int seconds = args.length >= 3 ? parseIntBounded(sender, args[2], 10, 86400)
+                        : EstimatorConfig.defaultSeconds;
+                    EstimateCommands.start(sender, true, null, seconds);
+                } else if (args.length >= 2 && "stop".equals(args[1])) {
+                    EstimateCommands.stop(sender, true, null);
+                } else {
+                    EstimateCommands.show(sender, true, null);
+                }
+                break;
             case "dump":
                 TrafficCommands.dump(sender, true, Minecraft.getMinecraft().mcDataDir);
                 break;
@@ -59,7 +71,9 @@ public class ClientTrafficCommand extends GTNHClientCommand {
     @Override
     @SuppressWarnings("rawtypes")
     public List addTabCompletionOptions(ICommandSender sender, String[] args) {
-        if (args.length == 1) return getListOfStringsMatchingLastWord(args, "stats", "dump", "reset");
+        if (args.length == 1) return getListOfStringsMatchingLastWord(args, "stats", "estimate", "dump", "reset");
+        if (args.length == 2 && "estimate".equals(args[0]))
+            return getListOfStringsMatchingLastWord(args, "start", "stop");
         if ("stats".equals(args[0])) {
             List<String> options = new ArrayList<>(TrafficCommands.connectionLabels());
             for (Window w : Window.values()) options.add(w.id);
