@@ -129,11 +129,33 @@ Mods missing from that cache are not checked yet.
 
 Purpose: a first rough split of traffic before writing anything.
 
-- [ ] On a dedicated GTNH test server, run the vanilla `/netstat` command (server console) after a play session.
-- [ ] Note the share of custom payload (all mods) vs chunk data vs entity movement vs tile entity updates.
+- [x] ~~On a dedicated GTNH test server, run the vanilla `/netstat` command (server console) after a play session.~~
+  Superseded by `/neth` (phase 1). `/netstat` was still used as a cross-check: on the dev server its byte counts
+  equal ours minus the length prefixes, and it was run on the GTNH daily test server too.
+- [x] Note the share of custom payload (all mods) vs chunk data vs entity movement vs tile entity updates.
+  See "Results: share by category" below.
 - [x] Wireshark capture of a real session (community server, online mode, so encrypted: wire level only).
 - [x] Offline-mode local server + capture. Offline mode skips encryption, so the capture can be parsed per
   packet and per channel, and fed to the phase 2 estimator. Better than `/netstat`.
+
+### Results: share by category (2026-10-29)
+
+Server to client, from the phase 1 `/neth dump` of the GTNH daily 804 test (one player, developed base):
+
+| Category | Whole session (2 logins, ~4 min, 10.9 MiB) | Last 60 s, standing in the base (25 KiB/s) |
+|---|---|---|
+| Custom payload (mods) | 45% | 46% |
+| Tile entities (S35) | 22% | 26% |
+| Block changes (S22, S23, S24) | 7% | 16% |
+| Chunks (S21, S26) | 14% | 11% |
+| Mod handshake (`FML\|HS`, `FORGE`, `REGISTER`) | 10% | 0% |
+| Entities (spawn, movement, metadata) | 0.2% | 0.2% |
+| Vanilla login and server list pings | 0.9% | 0% |
+
+- Mods and tile entities are about 72% of steady traffic. Inside custom payload: the GC gear slot packets
+  and the large GregTech block event and coil packets.
+- Entity movement is negligible here, but this was one player in a base; mobs and other players will change that.
+- Chunks dominate only while moving and at login.
 
 ### Results: community server, early base, idle (2026-10-29)
 
