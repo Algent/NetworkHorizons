@@ -271,6 +271,8 @@ server can install it alone.
   in the instance folder, for offline analysis.
 - `/neth reset`.
 - Client side: the same command as `/nethc` (client command, no permission needed), for the client's own connection.
+- The output says which side it is: `[NetH server] 3 connection(s)` with "Sent to clients" first, or
+  `[NetH client] <server address>` with "Received from server" first. Dumps are `traffic-server-*.csv` / `traffic-client-*.csv`.
 
 ### Implementation notes
 
@@ -312,6 +314,20 @@ One player, two logins, about 2 minutes in a developed base. `/neth dump` on the
 - **Server list ping:** about 25 KB per `S00PacketServerInfo` (mod list). The multiplayer screen pinged 24 times
   before joining: 582 KB.
 - **Client to server:** under 0.6 KiB/s; OpenComputers #0 is the largest at about 3/s.
+### Results: Elios community server, 3 players (2026-10-29)
+
+Daily 799, `/neth dump` on the server after about 400 s, plus `/nethc` on one client. Steady numbers are the last 60 s.
+
+- **Galacticraft gear packets scale with players nearby.** Each player received 19.8 to 23.5 `[GalacticraftCore]#0`
+  per tick (16.7 to 19.6 KiB/s): 76 to 87% of their steady traffic. Alone near spawn the client saw 8.5/tick;
+  with the other two around, 20 to 27/tick (Hodgepodge `/packetstats` agrees). Server total about 66 KiB/s,
+  of which about 55 KiB/s is this one packet.
+- **Per player steady: 22 to 24 KiB/s, 22 to 25 packets/tick.** Without the GC packets it would be 3 to 5 KiB/s.
+- **No S35 at all:** Elios runs Hodgepodge `batchDescriptionPacketsCode` (default off), so tile entity descriptions
+  arrive as `[hodgepodge]#1` batches (0.16/tick, about 1 KiB/s, up to 32 KB each).
+- **Login:** BetterQuesting 1.75 to 1.78 MB per player here (more quests done than on the local test).
+- Server and client counts for the same connection agree, as in the local test.
+
 ### Overhead (2026-10-29)
 
 `TrafficRecorderAllocationTest` (runs with the unit tests) asserts no allocation over 200k calls on known keys.

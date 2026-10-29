@@ -36,17 +36,23 @@ public final class NetworkHorizonsCommand {
     /** Call after GTNHLib's {@code BrigadierApi.init()}, which runs at server about to start. */
     public static void register(Supplier<File> baseDir) {
         LiteralArgumentBuilder<ICommandSender> stats = literal("stats")
-            .executes(ctx -> TrafficCommands.stats(ctx.getSource(), null, StatsConfig.defaultTop, Window.LAST_60S))
+            .executes(
+                ctx -> TrafficCommands.stats(ctx.getSource(), false, null, StatsConfig.defaultTop, Window.LAST_60S))
             .then(player(Window.LAST_60S, null));
         for (Window window : Window.values()) {
             stats.then(
                 literal(window.id)
-                    .executes(ctx -> TrafficCommands.stats(ctx.getSource(), null, StatsConfig.defaultTop, window))
+                    .executes(
+                        ctx -> TrafficCommands.stats(ctx.getSource(), false, null, StatsConfig.defaultTop, window))
                     .then(
                         argument(ARG_TOP, IntegerArgumentType.integer(1, 1000))
                             .executes(
-                                ctx -> TrafficCommands
-                                    .stats(ctx.getSource(), null, IntegerArgumentType.getInteger(ctx, ARG_TOP), window))
+                                ctx -> TrafficCommands.stats(
+                                    ctx.getSource(),
+                                    false,
+                                    null,
+                                    IntegerArgumentType.getInteger(ctx, ARG_TOP),
+                                    window))
                             .then(player(window, ARG_TOP))));
         }
 
@@ -58,7 +64,7 @@ public final class NetworkHorizonsCommand {
                         return Command.SINGLE_SUCCESS;
                     })
                     .then(stats)
-                    .then(literal("dump").executes(ctx -> TrafficCommands.dump(ctx.getSource(), baseDir.get())))
+                    .then(literal("dump").executes(ctx -> TrafficCommands.dump(ctx.getSource(), false, baseDir.get())))
                     .then(literal("reset").executes(ctx -> TrafficCommands.reset(ctx.getSource()))));
     }
 
@@ -68,6 +74,7 @@ public final class NetworkHorizonsCommand {
             .executes(
                 ctx -> TrafficCommands.stats(
                     ctx.getSource(),
+                    false,
                     StringArgumentType.getString(ctx, ARG_PLAYER),
                     topArg == null ? StatsConfig.defaultTop : IntegerArgumentType.getInteger(ctx, topArg),
                     window));

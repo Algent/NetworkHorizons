@@ -31,8 +31,11 @@ public final class TrafficCommands {
 
     private TrafficCommands() {}
 
-    /** @param player connection label to show, or null for all connections */
-    public static int stats(ICommandSender sender, String player, int top, Window window) {
+    /**
+     * @param client true for {@code /nethc} (the client's connection to its server), false for {@code /neth}
+     * @param player connection label to show, or null for all connections
+     */
+    public static int stats(ICommandSender sender, boolean client, String player, int top, Window window) {
         List<TrafficStats> sources = new ArrayList<>();
         List<ConnectionTraffic> live = TrafficRecorder.liveConnections();
         for (ConnectionTraffic conn : live) {
@@ -48,10 +51,23 @@ public final class TrafficCommands {
         int now = TrafficRecorder.nowSeconds();
         int seconds = TrafficReport.seconds(sources, window, now);
         List<TrafficReport.Row> rows = TrafficReport.aggregate(sources, window, now);
-        String who = player != null ? player : live.size() + " live connection(s)";
-        send(sender, EnumChatFormatting.GOLD + "[NH] " + who + ", " + window.id + " (" + seconds + "s)");
+        String header;
+        if (client) {
+            List<String> servers = new ArrayList<>();
+            for (ConnectionTraffic conn : live) servers.add(conn.label());
+            header = EnumChatFormatting.AQUA + "[NetH client] "
+                + (player != null ? player : servers.isEmpty() ? "not connected" : String.join(", ", servers));
+        } else {
+            header = EnumChatFormatting.GOLD + "[NetH server] "
+                + (player != null ? player : live.size() + " connection(s)");
+        }
+        send(sender, header + ", " + window.id + " (" + seconds + "s)");
         if (!StatsConfig.enabled) send(sender, EnumChatFormatting.RED + "Stats are disabled in the config");
-        for (Direction dir : Direction.values()) {
+        String peer = client ? "server" : player != null ? player : "clients";
+        // larger direction first: what the server sends, what the client receives
+        Direction[] order = client ? new Direction[] { Direction.IN, Direction.OUT }
+            : new Direction[] { Direction.OUT, Direction.IN };
+        for (Direction dir : order) {
             long count = 0, bytes = 0;
             for (TrafficReport.Row r : rows) {
                 if (r.direction == dir) {
@@ -65,7 +81,7 @@ public final class TrafficCommands {
                     Locale.ROOT,
                     "%s%s %s/s, %.1f/t",
                     EnumChatFormatting.YELLOW,
-                    dir == Direction.OUT ? "Sent" : "Received",
+                    dir == Direction.OUT ? "Sent to " + peer : "Received from " + peer,
                     TrafficReport.formatBytes((double) bytes / seconds),
                     (double) count / seconds / 20));
             int shown = 0;
@@ -87,9 +103,9 @@ public final class TrafficCommands {
         return Command.SINGLE_SUCCESS;
     }
 
-    public static int dump(ICommandSender sender, File baseDir) {
+    public static int dump(ICommandSender sender, boolean client, File baseDir) {
         try {
-            File file = TrafficReport.dump(new File(baseDir, "networkhorizons"));
+            File file = TrafficReport.dump(new File(baseDir, "networkhorizons"), client ? "client" : "server");
             send(sender, "Wrote " + file.getPath());
         } catch (IOException e) {
             throw new CommandException("Dump failed: " + e.getMessage());

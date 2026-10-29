@@ -42,11 +42,11 @@ public class ClientTrafficCommand extends GTNHClientCommand {
                     else if (args[i].matches("\\d+")) top = Math.max(1, Integer.parseInt(args[i]));
                     else player = args[i];
                 }
-                TrafficCommands.stats(sender, player, top, window);
+                TrafficCommands.stats(sender, true, player, top, window);
                 break;
             }
             case "dump":
-                TrafficCommands.dump(sender, Minecraft.getMinecraft().mcDataDir);
+                TrafficCommands.dump(sender, true, Minecraft.getMinecraft().mcDataDir);
                 break;
             case "reset":
                 TrafficCommands.reset(sender);
