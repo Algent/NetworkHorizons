@@ -4,7 +4,11 @@
   "package": "dev.aruka.networkhorizons.mixins",
   "refmap": "mixins.networkhorizons.refmap.json",
   "compatibilityLevel": "JAVA_8",
-  "mixins": [],
+  "mixins": [
+    "MixinMessageDeserializer",
+    "MixinMessageSerializer",
+    "S3FPacketCustomPayloadAccessor"
+  ],
   "client": [],
   "server": []
 }

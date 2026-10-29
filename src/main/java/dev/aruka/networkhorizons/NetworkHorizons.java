@@ -8,13 +8,15 @@ import cpw.mods.fml.common.SidedProxy;
 import cpw.mods.fml.common.event.FMLInitializationEvent;
 import cpw.mods.fml.common.event.FMLPostInitializationEvent;
 import cpw.mods.fml.common.event.FMLPreInitializationEvent;
-import cpw.mods.fml.common.event.FMLServerStartingEvent;
+import cpw.mods.fml.common.event.FMLServerAboutToStartEvent;
 
 @Mod(
     modid = NetworkHorizons.MODID,
     version = Tags.VERSION,
     name = "NetworkHorizons",
     acceptedMinecraftVersions = "[1.7.10]",
+    dependencies = "required-after:gtnhlib@[0.11.54,)",
+    guiFactory = "dev.aruka.networkhorizons.config.NetworkHorizonsGuiFactory",
     // Optional on both sides: a server with the mod accepts vanilla-network clients and vice versa.
     acceptableRemoteVersions = "*")
 public class NetworkHorizons {
@@ -43,7 +45,7 @@ public class NetworkHorizons {
     }
 
     @Mod.EventHandler
-    public void serverStarting(FMLServerStartingEvent event) {
-        proxy.serverStarting(event);
+    public void serverAboutToStart(FMLServerAboutToStartEvent event) {
+        proxy.serverAboutToStart(event);
     }
 }

@@ -43,7 +43,7 @@ Target is GTNH, where the client and server run the same pack version. So:
 
 - **GTNHLib.** Likely needed from phase 1. Useful parts:
   - **fastutil** (through GTNHExtLib): primitive maps for per-key counters, without boxing.
-  - **Brigadier commands** for `/nh stats|dump|reset|capture`.
+  - **Brigadier commands** for `/neth stats|dump|reset|capture`.
   - **`@Config` annotations** replace the hand-written `Config` class (the template's `Configuration` code goes away).
   - **`@Sync` config fields** are pushed to clients at `PlayerLoggedInEvent` and restored on disconnect.
     Good for showing the server's settings on the client. Not for the compression switch point,
@@ -221,7 +221,8 @@ server can install it alone.
   It has the `Packet` object and the encoded size (`ByteBuf.readableBytes()`).
 - **Inbound:** mixin in `MessageDeserializer.decode`. Bytes consumed per decoded packet, plus its class.
 - **Custom payloads:** for `S3FPacketCustomPayload` / `C17PacketCustomPayload`, key by channel name
-  (`func_149169_c()`) plus first payload byte (`func_149168_d()[0]`).
+  plus first payload byte. The S3F getters (`func_149169_c()`, `func_149168_d()`) are `@SideOnly(CLIENT)`
+  and stripped on dedicated servers, so S3F is read through an `@Accessor` mixin on its fields.
 - **Framing:** add the varint length prefix size (1 to 5 bytes with Hodgepodge) to get framed bytes.
   It is the same on the wire, since CFB8 adds nothing.
 - **No conflict with Hodgepodge.** It mixes into `MessageSerializer2`, not `MessageSerializer`.
@@ -242,9 +243,25 @@ server can install it alone.
 
 ### Output
 
-- `/nh stats [player] [top N] [window]`: top sources by bytes/s, with share of total.
-- `/nh dump`: CSV (one row per key per player) into the instance folder, for offline analysis.
-- `/nh reset`.
+- `/neth stats [60s|10m|total] [top N] [player]` (or `/neth stats <player>`): top sources by bytes/s,
+  with share of total, per direction.
+- `/neth dump`: CSV (one row per key per connection, plus the disconnected bucket) into `networkhorizons/`
+  in the instance folder, for offline analysis.
+- `/neth reset`.
+- Client side: the same command as `/nethc` (client command, no permission needed), for the client's own connection.
+
+### Implementation notes
+
+- GTNHLib 0.11.54 is a required dependency. jvmDowngrader jars need it anyway: its `MixinJarDiscoverer`
+  lets FML skip the `META-INF/versions` classes, and it provides the API stubs (`jvmDowngraderStubsProvider = gtnhlib`).
+- Config: GTNHLib `@Config` (`StatsConfig`: `enabled`, `defaultTop`), with the generated config GUI.
+- Server command `/neth` through GTNHLib's Brigadier (registered at server about to start, after `BrigadierApi.init()`).
+  Client command `/nethc` is a `GTNHClientCommand`, since that Brigadier dispatcher is server side only.
+- No fastutil needed so far: `ConcurrentHashMap` lookups on known keys do not allocate.
+- Mixins at `MessageSerializer.encode` TAIL and `MessageDeserializer.decode` HEAD/TAIL, `remap = false`
+  (Netty method names, class names are deobfuscated at runtime).
+- Key: class, or channel + first payload byte. The connection state is stored with the key when first seen.
+- Rates: per key, a 60 × 1 s ring and a 60 × 10 s ring (about 1.5 KB per key).
 
 ### Sides
 
@@ -253,7 +270,8 @@ server can install it alone.
 
 ### Done when
 
-- [ ] Running it on a dedicated server (`runServer`) gives a stable per-channel / per-packet breakdown.
+- [x] Running it on a dedicated server (`runServer`) gives a stable per-channel / per-packet breakdown.
+  Checked with a scripted vanilla client: totals match vanilla `/netstat` exactly once the length prefixes are removed.
   The integrated server shows nothing.
 - [ ] Same on a GTNH test server.
 - [ ] Overhead is negligible (counter updates only, no allocation per packet).
@@ -342,7 +360,7 @@ Per-message compression with context takeover, like WebSocket permessage-deflate
   so the next frame already sees the new state.
   Do not rely on the FML channel handler for this: when it processes the message is not ours to control.
 - **Stats see both sides.** Phase 1 counters keep counting uncompressed sizes, and a second counter records
-  the compressed wire size, so `/nh stats` shows the actual saving per source.
+  the compressed wire size, so `/neth stats` shows the actual saving per source.
 
 ### Negotiation
 

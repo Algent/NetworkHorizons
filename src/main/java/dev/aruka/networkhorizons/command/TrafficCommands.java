@@ -1,0 +1,111 @@
+package dev.aruka.networkhorizons.command;
+
+import java.io.File;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+
+import net.minecraft.command.CommandException;
+import net.minecraft.command.ICommandSender;
+import net.minecraft.util.ChatComponentText;
+import net.minecraft.util.EnumChatFormatting;
+
+import com.mojang.brigadier.Command;
+
+import dev.aruka.networkhorizons.config.StatsConfig;
+import dev.aruka.networkhorizons.stats.ConnectionTraffic;
+import dev.aruka.networkhorizons.stats.Direction;
+import dev.aruka.networkhorizons.stats.TrafficRecorder;
+import dev.aruka.networkhorizons.stats.TrafficReport;
+import dev.aruka.networkhorizons.stats.TrafficStats;
+import dev.aruka.networkhorizons.stats.Window;
+
+/** Actions behind {@code /neth} (server) and {@code /nethc} (client), for the connections of the side they run on. */
+public final class TrafficCommands {
+
+    private TrafficCommands() {}
+
+    /** @param player connection label to show, or null for all connections */
+    public static int stats(ICommandSender sender, String player, int top, Window window) {
+        List<TrafficStats> sources = new ArrayList<>();
+        List<ConnectionTraffic> live = TrafficRecorder.liveConnections();
+        for (ConnectionTraffic conn : live) {
+            if (player == null || conn.label()
+                .equalsIgnoreCase(player)) sources.add(conn.stats());
+        }
+        if (player == null) {
+            sources.add(TrafficRecorder.disconnected());
+        } else if (sources.isEmpty()) {
+            throw new CommandException("No connection for " + player);
+        }
+
+        int now = TrafficRecorder.nowSeconds();
+        int seconds = TrafficReport.seconds(sources, window, now);
+        List<TrafficReport.Row> rows = TrafficReport.aggregate(sources, window, now);
+        String who = player != null ? player : live.size() + " live connection(s)";
+        send(sender, EnumChatFormatting.GOLD + "[NH] " + who + ", " + window.id + " (" + seconds + "s)");
+        if (!StatsConfig.enabled) send(sender, EnumChatFormatting.RED + "Stats are disabled in the config");
+        for (Direction dir : Direction.values()) {
+            long count = 0, bytes = 0;
+            for (TrafficReport.Row r : rows) {
+                if (r.direction == dir) {
+                    count += r.count;
+                    bytes += r.bytes;
+                }
+            }
+            send(
+                sender,
+                String.format(
+                    "%s%s %s/s, %.1f/t",
+                    EnumChatFormatting.YELLOW,
+                    dir == Direction.OUT ? "Sent" : "Received",
+                    TrafficReport.formatBytes((double) bytes / seconds),
+                    (double) count / seconds / 20));
+            int shown = 0;
+            for (TrafficReport.Row r : rows) {
+                if (r.direction != dir || shown++ >= top) continue;
+                send(
+                    sender,
+                    String.format(
+                        "%s %9s/s %5.1f%% %6.2f/t %s%s",
+                        EnumChatFormatting.GRAY,
+                        TrafficReport.formatBytes((double) r.bytes / seconds),
+                        bytes == 0 ? 0 : r.bytes * 100.0 / bytes,
+                        (double) r.count / seconds / 20,
+                        EnumChatFormatting.WHITE,
+                        r.label));
+            }
+        }
+        return Command.SINGLE_SUCCESS;
+    }
+
+    public static int dump(ICommandSender sender, File baseDir) {
+        try {
+            File file = TrafficReport.dump(new File(baseDir, "networkhorizons"));
+            send(sender, "Wrote " + file.getPath());
+        } catch (IOException e) {
+            throw new CommandException("Dump failed: " + e.getMessage());
+        }
+        return Command.SINGLE_SUCCESS;
+    }
+
+    public static int reset(ICommandSender sender) {
+        TrafficRecorder.reset();
+        send(sender, "Traffic stats reset");
+        return Command.SINGLE_SUCCESS;
+    }
+
+    public static String usage(String name) {
+        return "/" + name + " stats [60s|10m|total] [top N] [player] | dump | reset";
+    }
+
+    public static List<String> connectionLabels() {
+        List<String> labels = new ArrayList<>();
+        for (ConnectionTraffic conn : TrafficRecorder.liveConnections()) labels.add(conn.label());
+        return labels;
+    }
+
+    static void send(ICommandSender sender, String text) {
+        sender.addChatMessage(new ChatComponentText(text));
+    }
+}
