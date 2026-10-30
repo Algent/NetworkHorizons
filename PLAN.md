@@ -403,9 +403,28 @@ Purpose: answer "would compression help, and which kind" with real traffic, stil
 - Runs any strategy over a capture, including the ones the mod does not ship: zstd (zstd-jni) at several
   levels, preset dictionaries trained on captures, multi-packet frames.
 
+### Results: estimator on GTNH daily 804, local server and client (2026-10-30)
+
+One player in the endgame base, 600 s each side, with a fixed Galacticraft build (only 126 `[GalacticraftCore]#0`
+frames in 10 min, so "All" and "Without" are now the same to 0.1%). Server: what it sent; client: what it received.
+
+| Strategy | Server (400000 frames, 29.2 MiB, 49.8 KiB/s) | Client (401415 frames, 29.3 MiB) | CPU, ns per byte |
+|---|---|---|---|
+| Per packet, deflate >= 256 B (1.8 style) | 10.7% saved | 10.8% | 13 to 15 |
+| Stream deflate L1, flush per packet | 34.5% | 34.7% | 27 to 38 |
+| Stream deflate L6, flush per packet | 37.0% | 37.2% | 39 to 50 |
+| Stream deflate L6, flush per tick | 43.6% | 43.7% | 20 to 22 |
+
+- Server ticks and client arrival bursts give the same per-tick result here (loopback, so bursts equal ticks).
+- Per tick is both smaller and cheaper (fewer flushes) than per packet.
+- CPU is negligible: at 50 KiB/s, stream L1 costs about 2 ms per second per player, on the Netty threads.
+- In line with the offline endgame capture (46% L6 per packet, 52% per tick) and its per-key view:
+  multi-block changes and GT packets compress well, chunks (already deflated) do not.
+- Still to measure: several players, and Elios with Hodgepodge description batching on.
+
 ### Done when
 
-- [ ] A capture from a real GTNH session gives a ratio table for each strategy.
+- [x] A real GTNH session gives a ratio table for each strategy (in-mod estimator, above; raw capture not built yet).
 - [ ] Decision recorded here: build phase 4 or not, with which algorithm and flush policy.
 
 ## Phase 3: flush coalescing (server-only)
