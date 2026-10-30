@@ -8,7 +8,7 @@ import collections
 import time
 import zlib
 
-from mcframes import CHUNK_IDS, S2C, key, load_sessions
+from mcframes import CHUNK_IDS, S2C, key, load
 
 try:
     from compression import zstd  # Python 3.14+
@@ -37,8 +37,8 @@ class DeflateStream:
 
 
 class ZstdStream:
-    def __init__(self, level):
-        self.c = zstd.ZstdCompressor(level=level)
+    def __init__(self, level, zdict=None):
+        self.c = zstd.ZstdCompressor(level=level, zstd_dict=zdict)
 
     def push(self, data):
         return len(self.c.compress(data, zstd.ZstdCompressor.FLUSH_BLOCK))
@@ -73,19 +73,21 @@ def stream(bodies, groups, make, bypass_chunks=True):
 
 
 def tick_groups(frames, gap):
+    """Server ticks when the capture has them, else bursts of frames closer than gap seconds."""
+    ticks = all(f.tick >= 0 for f in frames)
     groups, cur, last = [], [], None
     for i, f in enumerate(frames):
-        if last is not None and f.time - last > gap:
+        if last is not None and (f.tick != last.tick if ticks else f.time - last.time > gap):
             groups.append(cur)
             cur = []
         cur.append(i)
-        last = f.time
+        last = f
     if cur:
         groups.append(cur)
     return groups
 
 
-def strategies(bodies, per_frame, per_tick):
+def strategies(bodies, per_frame, per_tick, zdict=None):
     yield "per-packet deflate L6, >=256 B (1.8 style)", lambda: per_packet(bodies)
     for level in (1, 3, 6):
         yield f"stream deflate L{level}, flush/packet", lambda level=level: stream(bodies, per_frame, lambda: DeflateStream(level))
@@ -95,9 +97,12 @@ def strategies(bodies, per_frame, per_tick):
         for level in (1, 3):
             yield f"stream zstd L{level}, flush/packet", lambda level=level: stream(bodies, per_frame, lambda: ZstdStream(level))
         yield "stream zstd L3, flush/tick", lambda: stream(bodies, per_tick, lambda: ZstdStream(3))
+        if zdict is not None:
+            yield "stream zstd L3 + dict, flush/packet", lambda: stream(bodies, per_frame, lambda: ZstdStream(3, zdict))
+            yield "stream zstd L3 + dict, flush/tick", lambda: stream(bodies, per_tick, lambda: ZstdStream(3, zdict))
 
 
-def run(title, frames, gap):
+def run(title, frames, gap, zdict=None):
     if not frames:
         return
     bodies = [f.body for f in frames]
@@ -108,7 +113,7 @@ def run(title, frames, gap):
     print(f"\n== {title}: {len(frames)} frames, {raw / 1024:.0f} KiB framed, {len(per_tick)} tick groups")
     print(f"   {'strategy':42s} {'KiB':>8s} {'ratio':>6s} {'saved':>6s} {'ns/B':>6s}")
     print(f"   {'raw':42s} {raw / 1024:8.0f} {1:6.2f} {0:5.0f}%")
-    for name, fn in strategies(bodies, per_frame, per_tick):
+    for name, fn in strategies(bodies, per_frame, per_tick, zdict):
         t = time.perf_counter_ns()
         size = fn()
         dt = time.perf_counter_ns() - t
@@ -133,19 +138,33 @@ def run_per_key(title, frames, top):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("pcap")
+    p.add_argument("pcap", help="pcap, or NetworkHorizons capture (.nhcap.gz)")
     p.add_argument("--login-seconds", type=float, default=15)
     p.add_argument("--tick-gap", type=float, default=0.010, help="gap in seconds that starts a new tick group")
     p.add_argument("--per-key", action="store_true", help="also attribute compressed size to packet keys")
     p.add_argument("--top", type=int, default=10)
+    p.add_argument("--exclude", action="append", default=[], metavar="KEY",
+                   help="leave out a packet key, e.g. '[GalacticraftCore]#0' (repeatable)")
+    p.add_argument("--dict", type=int, default=0, metavar="BYTES",
+                   help="also try zstd with a dictionary of this size, trained on the first 20%% of each phase "
+                        "and evaluated (with every other strategy) on the remaining 80%%")
     a = p.parse_args()
+    if a.dict and zstd is None:
+        raise SystemExit("--dict needs Python 3.14+ (compression.zstd)")
 
-    for n, s in enumerate(load_sessions(a.pcap), 1):
+    for n, s in enumerate(load(a.pcap), 1):
         t0 = s.start
-        s2c = [f for f in s.frames if f.dir == S2C]
+        s2c = [f for f in s.frames if f.dir == S2C and key(f) not in a.exclude]
         for phase, frames in (("LOGIN", [f for f in s2c if f.time - t0 < a.login_seconds]),
                               ("STEADY", [f for f in s2c if f.time - t0 >= a.login_seconds])):
-            run(f"Session {n} {phase}", frames, a.tick_gap)
+            zdict = None
+            if a.dict and len(frames) >= 100:
+                cut = len(frames) // 5
+                samples = [f.body for f in frames[:cut] if f.body[0] not in CHUNK_IDS]
+                zdict = zstd.train_dict(samples, a.dict)
+                frames = frames[cut:]
+                phase += f" (last 80%, dictionary {a.dict} B from the first 20%)"
+            run(f"Session {n} {phase}", frames, a.tick_gap, zdict)
             if a.per_key:
                 run_per_key(f"Session {n} {phase}", frames, a.top)
 

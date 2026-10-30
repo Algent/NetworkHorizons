@@ -3,6 +3,7 @@ package dev.aruka.networkhorizons.stats;
 import net.minecraft.network.NetHandlerPlayServer;
 import net.minecraft.network.NetworkManager;
 
+import dev.aruka.networkhorizons.capture.CaptureSession;
 import dev.aruka.networkhorizons.estimate.EstimatorSession;
 import io.netty.channel.Channel;
 
@@ -14,6 +15,8 @@ public final class ConnectionTraffic {
     volatile TrafficStats stats;
     /** Compression estimate running on this connection, or null. */
     public volatile EstimatorSession estimate;
+    /** Raw capture running on this connection, or null. */
+    public volatile CaptureSession capture;
 
     ConnectionTraffic(Channel channel, TrafficStats stats) {
         this.channel = channel;

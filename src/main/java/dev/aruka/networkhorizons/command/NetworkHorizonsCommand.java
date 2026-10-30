@@ -17,6 +17,7 @@ import com.mojang.brigadier.builder.RequiredArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
 
+import dev.aruka.networkhorizons.config.CaptureConfig;
 import dev.aruka.networkhorizons.config.EstimatorConfig;
 import dev.aruka.networkhorizons.config.StatsConfig;
 import dev.aruka.networkhorizons.stats.Window;
@@ -75,6 +76,7 @@ public final class NetworkHorizonsCommand {
                     })
                     .then(stats)
                     .then(estimate())
+                    .then(capture(baseDir))
                     .then(literal("dump").executes(ctx -> TrafficCommands.dump(ctx.getSource(), false, baseDir.get())))
                     .then(literal("reset").executes(ctx -> TrafficCommands.reset(ctx.getSource()))));
     }
@@ -105,6 +107,34 @@ public final class NetworkHorizonsCommand {
                     .executes(
                         ctx -> EstimateCommands
                             .show(ctx.getSource(), false, StringArgumentType.getString(ctx, ARG_PLAYER))));
+    }
+
+    /** {@code capture [start <player|all> [seconds] | stop [player]]} */
+    private static LiteralArgumentBuilder<ICommandSender> capture(Supplier<File> baseDir) {
+        return literal("capture").executes(ctx -> CaptureCommands.show(ctx.getSource(), false))
+            .then(
+                literal("start").then(
+                    argument(ARG_PLAYER, StringArgumentType.word()).suggests(CONNECTIONS_OR_ALL)
+                        .executes(
+                            ctx -> CaptureCommands.start(
+                                ctx.getSource(),
+                                false,
+                                playerOrAll(ctx),
+                                CaptureConfig.defaultSeconds,
+                                baseDir.get()))
+                        .then(
+                            argument(ARG_SECONDS, IntegerArgumentType.integer(10, 86400)).executes(
+                                ctx -> CaptureCommands.start(
+                                    ctx.getSource(),
+                                    false,
+                                    playerOrAll(ctx),
+                                    IntegerArgumentType.getInteger(ctx, ARG_SECONDS),
+                                    baseDir.get())))))
+            .then(
+                literal("stop").executes(ctx -> CaptureCommands.stop(ctx.getSource(), false, null))
+                    .then(
+                        argument(ARG_PLAYER, StringArgumentType.word()).suggests(CONNECTIONS_OR_ALL)
+                            .executes(ctx -> CaptureCommands.stop(ctx.getSource(), false, playerOrAll(ctx)))));
     }
 
     private static String playerOrAll(CommandContext<ICommandSender> ctx) {

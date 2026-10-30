@@ -9,6 +9,8 @@ import net.minecraft.network.EnumConnectionState;
 import net.minecraft.network.NetworkManager;
 import net.minecraft.network.Packet;
 
+import dev.aruka.networkhorizons.capture.Capture;
+import dev.aruka.networkhorizons.capture.CaptureSession;
 import dev.aruka.networkhorizons.config.StatsConfig;
 import dev.aruka.networkhorizons.estimate.Estimator;
 import dev.aruka.networkhorizons.estimate.EstimatorSession;
@@ -63,6 +65,8 @@ public final class TrafficRecorder {
         if (estimate != null && buf != null && estimate.direction == dir) {
             Estimator.offer(estimate, stats.label(), packet, buf, index, bodySize, now);
         }
+        CaptureSession capture = conn.capture;
+        if (capture != null && buf != null) Capture.offer(capture, dir, state, buf, index, bodySize, now);
     }
 
     static int varIntSize(int value) {
@@ -88,6 +92,8 @@ public final class TrafficRecorder {
         live.remove(conn);
         EstimatorSession estimate = conn.estimate;
         if (estimate != null) Estimator.stop(estimate);
+        CaptureSession capture = conn.capture;
+        if (capture != null) Capture.stop(capture);
         TrafficStats target = disconnected;
         synchronized (target) {
             target.merge(conn.stats);

@@ -2,10 +2,12 @@
 import argparse
 import collections
 
-from mcframes import C2S, S2C, S35_ID, key, load_sessions
+from mcframes import C2S, S2C, S35_ID, key, load
 
 
 def report(title, frames, d, top, seconds, tile_entity_ids=False):
+    if not any(f.dir == d for f in frames):
+        return
     agg = collections.defaultdict(lambda: [0, 0, 0])
     for f in frames:
         if f.dir == d:
@@ -26,15 +28,16 @@ def report(title, frames, d, top, seconds, tile_entity_ids=False):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("pcap")
+    p.add_argument("pcap", help="pcap, or NetworkHorizons capture (.nhcap.gz)")
     p.add_argument("--login-seconds", type=float, default=15, help="time after connect counted as login (default 15)")
     p.add_argument("--top", type=int, default=30)
     a = p.parse_args()
 
-    for n, s in enumerate(load_sessions(a.pcap), 1):
+    for n, s in enumerate(load(a.pcap), 1):
         t0 = s.start
-        print(f"\n######## Session {n} (TCP stream {s.stream}): {s.end - t0:.0f}s, "
-              f"{s.segments[S2C]} S2C segments for {sum(f.dir == S2C for f in s.frames)} S2C frames")
+        source = f"TCP stream {s.stream}" if s.segments else "capture"
+        print(f"\n######## Session {n} ({source}): {s.end - t0:.0f}s, "
+              f"{s.segments.get(S2C, '?')} S2C segments for {sum(f.dir == S2C for f in s.frames)} S2C frames")
         per5 = collections.defaultdict(int)
         for f in s.frames:
             if f.dir == S2C:

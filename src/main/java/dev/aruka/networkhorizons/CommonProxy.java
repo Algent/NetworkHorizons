@@ -10,6 +10,7 @@ import cpw.mods.fml.common.event.FMLPostInitializationEvent;
 import cpw.mods.fml.common.event.FMLPreInitializationEvent;
 import cpw.mods.fml.common.event.FMLServerAboutToStartEvent;
 import dev.aruka.networkhorizons.command.NetworkHorizonsCommand;
+import dev.aruka.networkhorizons.config.CaptureConfig;
 import dev.aruka.networkhorizons.config.EstimatorConfig;
 import dev.aruka.networkhorizons.config.StatsConfig;
 
@@ -19,6 +20,7 @@ public class CommonProxy {
         try {
             ConfigurationManager.registerConfig(StatsConfig.class);
             ConfigurationManager.registerConfig(EstimatorConfig.class);
+            ConfigurationManager.registerConfig(CaptureConfig.class);
         } catch (ConfigException e) {
             throw new RuntimeException(e);
         }

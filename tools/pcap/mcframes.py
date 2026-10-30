@@ -1,10 +1,12 @@
-"""Read Minecraft 1.7.10 game sessions from a pcap (offline mode only: no encryption).
+"""Read Minecraft 1.7.10 game sessions from a pcap (offline mode only: no encryption) or a NetworkHorizons
+capture (.nhcap.gz, written by /neth capture or /nethc capture, works with encryption on).
 
 Rebuilds each TCP direction, splits frames and labels them by packet class, or by channel and first payload byte
 for custom payloads. Handles the Hodgepodge wire changes (5-byte frame length, extended S3F length, S35 byte arrays).
 """
 import collections
 import csv
+import gzip
 import os
 import shutil
 import struct
@@ -37,6 +39,7 @@ class Frame:
     state: str
     size: int  # framed size, length prefix included
     body: bytes  # packet id + data
+    tick: int = -1  # server tick, captures made on a server only
 
     @property
     def pid(self):
@@ -94,6 +97,46 @@ def server_ports(pcap):
     """Destination ports of client SYNs, keyed by TCP stream."""
     rows = tshark_fields(pcap, "tcp.flags.syn==1 && tcp.flags.ack==0", ["tcp.stream", "tcp.dstport"])
     return {int(st): port for st, port in rows}
+
+
+def load(path):
+    """Sessions from a pcap or a NetworkHorizons capture, by file name."""
+    if path.endswith(".nhcap.gz") or path.endswith(".nhcap"):
+        return [load_capture(path)]
+    return load_sessions(path)
+
+
+CAPTURE_STATES = {0: "HANDSHAKE", 1: "PLAY", 2: "STATUS", 3: "LOGIN"}
+
+
+def load_capture(path):
+    """One session from a capture. Directions are turned into S2C / C2S from the side that wrote it."""
+    opener = gzip.open if path.endswith(".gz") else open
+    with opener(path, "rb") as f:
+        data = f.read()
+    if data[:5] != b"NHCAP" or data[5] != 1:
+        raise SystemExit(f"{path}: not a version 1 NetworkHorizons capture")
+    client = data[6] == 1
+    n = struct.unpack_from(">H", data, 7)[0]
+    i = 9 + n + 8  # label, start epoch millis
+    frames = []
+    while i < len(data):
+        nanos, out, state, tick = struct.unpack_from(">qBbi", data, i)
+        ln, j = varint(data, i + 14)
+        body = data[j:j + ln]
+        i = j + ln
+        s2c = (out == 1) != client
+        state_name = CAPTURE_STATES.get(state, f"STATE{state}")
+        frames.append(Frame(nanos / 1e9, S2C if s2c else C2S, state_name, _vlen(ln) + ln, body, tick))
+    return Session(0, frames, {})
+
+
+def _vlen(n):
+    c = 1
+    while n >= 0x80:
+        n >>= 7
+        c += 1
+    return c
 
 
 def load_sessions(pcap):

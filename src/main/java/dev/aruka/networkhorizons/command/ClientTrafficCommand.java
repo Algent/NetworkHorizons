@@ -10,6 +10,7 @@ import net.minecraft.command.WrongUsageException;
 
 import com.gtnewhorizon.gtnhlib.commands.GTNHClientCommand;
 
+import dev.aruka.networkhorizons.config.CaptureConfig;
 import dev.aruka.networkhorizons.config.EstimatorConfig;
 import dev.aruka.networkhorizons.config.StatsConfig;
 import dev.aruka.networkhorizons.stats.Window;
@@ -57,6 +58,17 @@ public class ClientTrafficCommand extends GTNHClientCommand {
                     EstimateCommands.show(sender, true, null);
                 }
                 break;
+            case "capture":
+                if (args.length >= 2 && "start".equals(args[1])) {
+                    int seconds = args.length >= 3 ? parseIntBounded(sender, args[2], 10, 86400)
+                        : CaptureConfig.defaultSeconds;
+                    CaptureCommands.start(sender, true, null, seconds, Minecraft.getMinecraft().mcDataDir);
+                } else if (args.length >= 2 && "stop".equals(args[1])) {
+                    CaptureCommands.stop(sender, true, null);
+                } else {
+                    CaptureCommands.show(sender, true);
+                }
+                break;
             case "dump":
                 TrafficCommands.dump(sender, true, Minecraft.getMinecraft().mcDataDir);
                 break;
@@ -71,8 +83,9 @@ public class ClientTrafficCommand extends GTNHClientCommand {
     @Override
     @SuppressWarnings("rawtypes")
     public List addTabCompletionOptions(ICommandSender sender, String[] args) {
-        if (args.length == 1) return getListOfStringsMatchingLastWord(args, "stats", "estimate", "dump", "reset");
-        if (args.length == 2 && "estimate".equals(args[0]))
+        if (args.length == 1)
+            return getListOfStringsMatchingLastWord(args, "stats", "estimate", "capture", "dump", "reset");
+        if (args.length == 2 && ("estimate".equals(args[0]) || "capture".equals(args[0])))
             return getListOfStringsMatchingLastWord(args, "start", "stop");
         if ("stats".equals(args[0])) {
             List<String> options = new ArrayList<>(TrafficCommands.connectionLabels());

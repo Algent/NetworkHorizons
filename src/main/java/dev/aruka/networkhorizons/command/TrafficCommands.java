@@ -128,9 +128,17 @@ public final class TrafficCommands {
     }
 
     public static String usage(String name) {
-        String estimate = name.equals(ClientTrafficCommand.NAME) ? "estimate [start [seconds] | stop]"
+        boolean client = name.equals(ClientTrafficCommand.NAME);
+        String estimate = client ? "estimate [start [seconds] | stop]"
             : "estimate [start <player|all> [seconds] | stop [player] | <player>]";
-        return "/" + name + " stats [60s|10m|total] [top N] [player] | " + estimate + " | dump | reset";
+        String capture = client ? "capture [start [seconds] | stop]"
+            : "capture [start <player|all> [seconds] | stop [player]]";
+        return "/" + name
+            + " stats [60s|10m|total] [top N] [player] | "
+            + estimate
+            + " | "
+            + capture
+            + " | dump | reset";
     }
 
     public static List<String> connectionLabels() {

@@ -397,6 +397,34 @@ Purpose: answer "would compression help, and which kind" with real traffic, stil
   Framed sizes can be recomputed from it.
 - **Privacy:** contains chat, positions, everything. Document it, never enable it by default.
 
+**Built (2026-10-31):** `/neth capture start <player|all> [seconds] | stop [player]` and `/nethc capture start
+[seconds] | stop`, files in `networkhorizons/captures/capture-<side>-<label>-<time>.nhcap.gz`. Format v1, gzipped:
+header `"NHCAP" | u8 version | u8 side | u16 + UTF-8 label | i64 start epoch millis`, then per frame
+`i64 nanos | u8 direction | u8 state (protocol id + 1) | i32 server tick (-1 on clients) | varint length | body`.
+The state and tick were added to the planned format so replays know the packet table and the real tick grouping.
+Same pattern as the estimator: copies only for captured connections, one writer thread at minimum priority,
+drops counted beyond `capture.maxQueuedMegabytes`. `capture.allowed` lets admins turn it off.
+
+### Results: replay with zstd and a trained dictionary (2026-10-31)
+
+`tools/pcap/compress.py --dict 32768 --exclude '[GalacticraftCore]#0'` on the offline endgame pcap (session 2
+steady, dictionary trained on the first 20%, every strategy measured on the last 80%):
+
+| Strategy | Saved |
+|---|---|
+| Per packet, 1.8 style | 27% |
+| Stream deflate L1 / L6, flush per packet | 50% / 55% |
+| Stream zstd L3, flush per packet | 50% |
+| Stream zstd L3 + dictionary, flush per packet | 50% |
+| Stream deflate L3, flush per tick | 63% |
+| Stream zstd L3, flush per tick | 69% (69% with dictionary) |
+
+- **A preset dictionary adds nothing** once the stream keeps its context: the context learns the same strings
+  within seconds. Drop the dictionary idea.
+- **Flushed per packet, deflate beats zstd** (55% vs 50%): zstd's per-flush block overhead hurts small packets.
+  Per tick, zstd is ahead (69% vs 63%), but these pcap tick groups come from 10 ms gaps on loopback and are
+  larger than real ticks; re-check on an in-mod capture, which records the real tick.
+
 ### Offline replay tool
 
 - Separate source set or test main, never shipped in the mod jar.
@@ -424,7 +452,7 @@ frames in 10 min, so "All" and "Without" are now the same to 0.1%). Server: what
 
 ### Done when
 
-- [x] A real GTNH session gives a ratio table for each strategy (in-mod estimator, above; raw capture not built yet).
+- [x] A real GTNH session gives a ratio table for each strategy (in-mod estimator, above; raw capture built since).
 - [ ] Decision recorded here: build phase 4 or not, with which algorithm and flush policy.
 
 ## Phase 3: flush coalescing (server-only)
