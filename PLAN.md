@@ -522,6 +522,31 @@ Known breakages with Netty 4.1+:
 
 Must stay a separate, opt-in module, so a Netty problem never disables phases 1 to 4.
 
+### Small step first: Netty 4.0.56 override (prototype, 2026-10-30)
+
+The last 4.0.x release instead of 4.1: same API line, none of the 4.1 breakages above. See `launcher/README.md`.
+
+- **Swapped at launch, not by the mod.** A Prism/MultiMC component (`launcher/prism/patches/`) brings
+  `io.netty:netty-all:4.0.56.Final`: Prism keeps one copy per library and a strictly newer version from a later
+  component replaces it, on Java 8 and lwjgl3ify instances alike. It also adds `-Dio.netty.noPreferDirect=true`.
+  Dedicated servers: Netty 4.0.10 is bundled inside `minecraft_server.1.7.10.jar`, so the 4.0.56 jar goes first
+  on `-cp` (start line with the main class instead of `-jar`).
+- **Not fully binary compatible.** `tools/nettylink` scans every `io/netty` reference against a Netty jar.
+  On GTNH daily 804 (vanilla, Forge, lwjgl3ify, all mods of the 4 packs, 348k classes) against 4.0.56: two breaks.
+  `ChannelInboundInvoker` / `ChannelOutboundInvoker` were removed, so FML's `NetworkDispatcher.read` (`ctx.read()`)
+  throws `NoSuchMethodError` on every modded login; and Forestry reads the removed `EmptyArrays.EMPTY_INTS`.
+- **NetworkHorizons relinks them.** A coremod entry point (`NetworkHorizonsCore`) registers `NettyLinkFixer`
+  only when a newer Netty is on the classpath: it rewrites those return types to the receiver's type and the
+  removed `EmptyArrays` fields to `NettyCompat`. So the override requires the mod on that side.
+- **`noPreferDirect` must be a JVM argument.** In GTNH, FalsePattern's dependency loader uses Netty during coremod
+  discovery, which initializes `PlatformDependent` before any mod code: setting the property from the mod is too
+  late (tried from a mixin plugin). The mod logs an error at startup when it is missing.
+- `/neth info` and `/nethc info` (and the startup log) show the Netty version, the jar it came from and whether
+  direct buffers are preferred.
+- Checked on the dev server with a bot (stock, 4.0.56, 4.0.56 without the flag), and by booting the real
+  J8 and J17 daily 804 servers with the override up to the EULA check (mods load before it).
+- Not checked yet: a real client joining, Prism applying the component, long sessions.
+
 ## Out of scope (belongs in the mods themselves)
 
 Things found while looking at GregTech, to fix there, not here:

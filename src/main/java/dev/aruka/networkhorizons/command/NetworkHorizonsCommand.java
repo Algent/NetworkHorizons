@@ -75,6 +75,7 @@ public final class NetworkHorizonsCommand {
                     })
                     .then(stats)
                     .then(estimate())
+                    .then(literal("info").executes(ctx -> TrafficCommands.info(ctx.getSource(), false)))
                     .then(literal("dump").executes(ctx -> TrafficCommands.dump(ctx.getSource(), false, baseDir.get())))
                     .then(literal("reset").executes(ctx -> TrafficCommands.reset(ctx.getSource()))));
     }

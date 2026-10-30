@@ -12,6 +12,7 @@ import cpw.mods.fml.common.event.FMLServerAboutToStartEvent;
 import dev.aruka.networkhorizons.command.NetworkHorizonsCommand;
 import dev.aruka.networkhorizons.config.EstimatorConfig;
 import dev.aruka.networkhorizons.config.StatsConfig;
+import dev.aruka.networkhorizons.core.NettyEnvironment;
 
 public class CommonProxy {
 
@@ -24,6 +25,14 @@ public class CommonProxy {
         }
 
         NetworkHorizons.LOG.info("NetworkHorizons version " + Tags.VERSION);
+        NetworkHorizons.LOG.info(NettyEnvironment.describe());
+        if (NettyEnvironment.missingNoPreferDirect()) {
+            NetworkHorizons.LOG.error(
+                "Netty {} prefers direct buffers: add -D{}=true to the JVM arguments, vanilla needs heap buffers"
+                    + " (see the NetworkHorizons launcher README)",
+                NettyEnvironment.version(),
+                NettyEnvironment.NO_PREFER_DIRECT);
+        }
     }
 
     public void init(FMLInitializationEvent event) {}

@@ -15,7 +15,9 @@ import net.minecraft.util.EnumChatFormatting;
 
 import com.mojang.brigadier.Command;
 
+import dev.aruka.networkhorizons.Tags;
 import dev.aruka.networkhorizons.config.StatsConfig;
+import dev.aruka.networkhorizons.core.NettyEnvironment;
 import dev.aruka.networkhorizons.estimate.EstimateReport;
 import dev.aruka.networkhorizons.stats.ConnectionTraffic;
 import dev.aruka.networkhorizons.stats.Direction;
@@ -121,6 +123,14 @@ public final class TrafficCommands {
         return Command.SINGLE_SUCCESS;
     }
 
+    /** Mod version, side and the Netty actually loaded (see launcher/README.md). */
+    public static int info(ICommandSender sender, boolean client) {
+        String tag = client ? EnumChatFormatting.AQUA + "[NetH client] " : EnumChatFormatting.GOLD + "[NetH server] ";
+        send(sender, tag + "NetworkHorizons " + Tags.VERSION);
+        send(sender, NettyEnvironment.describe());
+        return Command.SINGLE_SUCCESS;
+    }
+
     public static int reset(ICommandSender sender) {
         TrafficRecorder.reset();
         send(sender, "Traffic stats reset");
@@ -130,7 +140,7 @@ public final class TrafficCommands {
     public static String usage(String name) {
         String estimate = name.equals(ClientTrafficCommand.NAME) ? "estimate [start [seconds] | stop]"
             : "estimate [start <player|all> [seconds] | stop [player] | <player>]";
-        return "/" + name + " stats [60s|10m|total] [top N] [player] | " + estimate + " | dump | reset";
+        return "/" + name + " stats [60s|10m|total] [top N] [player] | " + estimate + " | info | dump | reset";
     }
 
     public static List<String> connectionLabels() {

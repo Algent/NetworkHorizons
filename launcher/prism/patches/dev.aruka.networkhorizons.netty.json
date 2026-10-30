@@ -1,0 +1,22 @@
+{
+    "formatVersion": 1,
+    "name": "NetworkHorizons Netty",
+    "uid": "dev.aruka.networkhorizons.netty",
+    "version": "4.0.56.Final",
+    "+jvmArgs": [
+        "-Dio.netty.noPreferDirect=true"
+    ],
+    "libraries": [
+        {
+            "downloads": {
+                "artifact": {
+                    "path": "io/netty/netty-all/4.0.56.Final/netty-all-4.0.56.Final.jar",
+                    "sha1": "26b28bcb33ec9e4286cd856321eea3df57c31aaf",
+                    "size": 2291648,
+                    "url": "https://repo1.maven.org/maven2/io/netty/netty-all/4.0.56.Final/netty-all-4.0.56.Final.jar"
+                }
+            },
+            "name": "io.netty:netty-all:4.0.56.Final"
+        }
+    ]
+}
