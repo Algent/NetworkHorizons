@@ -479,6 +479,42 @@ No dropped frames. Server to client, per player, last column per tick on real se
 - **Other candidates for mod-side fixes** (not ours): `[BloodMagic]#0` about once per tick per player (74 B, 1.4 KiB/s),
   `S04PacketEntityEquipment` up to 1.4 per tick (114 B average, 3 KiB/s for one player).
 
+### Results: Java codec benchmark on the Elios captures (2026-11-03)
+
+`src/jmh/.../codec`: `./gradlew codecReport -PcodecArgs="--exclude [GalacticraftCore]#0 <captures>"` (sizes with a
+full round-trip check of every tick, quick speeds, memory) and `./gradlew jmh -PjmhArgs="CodecBenchmark -p capture=<file>"`.
+Per tick on real server ticks, GC gear slot packets excluded, chunks sent raw. JDK zlib, zstd-jni 1.5.7-6,
+lz4-java 1.11.0 (the versions CubicChunks1710 uses). Speeds from JMH on mamiemru (21 MB of tick payload), JDK 25.
+
+| Codec | Saved: algent / mamiemru / Schningman | Compress ns/B | Decompress ns/B | Encoder / decoder memory |
+|---|---|---|---|---|
+| deflate L1, history | 52.2 / 69.7 / 61.6% | 13.2 | 1.2 | 265 / 40 KiB |
+| deflate L3, history | 52.8 / 70.5 / 62.4% | 11.6 | 1.2 | 260 / 53 KiB |
+| deflate L6, history | 53.6 / 71.7 / 63.4% | 17.4 | 1.1 | 269 / 42 KiB |
+| deflate L1, each tick alone | 23.6 / 28.2 / 25.9% | 31.8 | 2.2 | 262 / 44 KiB |
+| zstd L1, history (512 KiB window) | 53.6 / 81.1 / 73.5% | 2.6 | 0.7 | 1.3 / 1.0 MiB |
+| zstd L3, history (2 MiB window) | 54.2 / 82.5 / 75.7% | 3.0 | 0.7 | 3.5 / 2.5 MiB |
+| zstd L3, 1 MiB window | 54.1 / 82.0 / 75.3% | 2.8 | 0.7 | 2.5 / 1.5 MiB |
+| zstd L1 / L3, 128 KiB window | 53.1-53.5 / 77.1 / 67.5-67.8% | 2.7-2.8 | 0.7 | 0.9-1.6 / 0.6 MiB |
+| lz4 fast, each tick alone | 19.2 / 22.5 / 20.7% | 1.2 | 0.6 | ~0 |
+| lz4 HC 9, each tick alone | 20.1 / 23.5 / 21.6% | 8.7 | 0.7 | ~0 |
+
+Memory is process committed memory (native plus heap) over 256 live contexts after 300 ticks each.
+
+- **LZ4 is out:** lz4-java has no streaming history (no dictionary or "continue" API; its block and frame streams
+  compress blocks independently), and ticks are small (median 430 B), so it saves only 19 to 23%, less than
+  deflate without history. Fast, but there is nothing to be fast about at 10 to 20 KiB/s per player.
+- **History is what matters**, for every codec: deflate L1 saves 24 to 28% per tick alone, 52 to 70% with history.
+- **zstd beats deflate on size by 0 to 11 points** (more on mixed traffic), mostly thanks to its larger window:
+  at a 128 KiB window, most of the gain disappears on two players out of three.
+- **CPU is not a criterion:** zstd compresses 4 to 6 times faster than JDK deflate, but even deflate L6 costs
+  about 0.4 s of CPU for a player's 30 minutes (0.02% of a core). Decompression on clients is about 1 ns/B for both.
+- **Memory is the real cost of zstd:** per connection, deflate is about 0.3 MiB on the server; zstd 1.3 MiB (L1)
+  to 3.5 MiB (L3). For 100 players: about 30 MiB with deflate, 135 to 360 MiB with zstd.
+- **Dependency cost of zstd:** zstd-jni bundles natives for 18 platforms and cannot be relocated (its JNI entry
+  points need the original package), so two mods shipping different versions would clash. A shared copy (for
+  example in GTNHExtLib) would be needed. JDK deflate needs nothing.
+
 ### Done when
 
 - [x] A real GTNH session gives a ratio table for each strategy (in-mod estimator, above; raw capture built since).

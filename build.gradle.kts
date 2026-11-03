@@ -18,6 +18,9 @@ val jmh: SourceSet by sourceSets.creating {
 dependencies {
     "jmhImplementation"("org.openjdk.jmh:jmh-core:1.37")
     "jmhAnnotationProcessor"("org.openjdk.jmh:jmh-generator-annprocess:1.37")
+    // codec candidates for phase 4, benchmark only (same versions as CubicChunks1710)
+    "jmhImplementation"("com.github.luben:zstd-jni:1.5.7-6")
+    "jmhImplementation"("at.yawk.lz4:lz4-java:1.11.0")
 }
 
 tasks.register<JavaExec>("jmh") {
@@ -28,6 +31,20 @@ tasks.register<JavaExec>("jmh") {
     args(
         providers.gradleProperty("jmhArgs")
             .getOrElse("-f 1 -wi 3 -i 5 -w 1s -r 1s -prof gc")
+            .split(" ")
+            .filter { it.isNotBlank() })
+}
+
+// Codec comparison on captures: ./gradlew codecReport -PcodecArgs="--exclude [GalacticraftCore]#0 a.nhcap.gz"
+tasks.register<JavaExec>("codecReport") {
+    group = "verification"
+    description = "Compares phase 4 codec candidates on NetworkHorizons captures"
+    classpath = jmh.runtimeClasspath
+    mainClass.set("dev.aruka.networkhorizons.codec.CodecReport")
+    maxHeapSize = "2g"
+    args(
+        providers.gradleProperty("codecArgs")
+            .getOrElse("")
             .split(" ")
             .filter { it.isNotBlank() })
 }
