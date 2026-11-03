@@ -450,6 +450,35 @@ frames in 10 min, so "All" and "Without" are now the same to 0.1%). Server: what
   multi-block changes and GT packets compress well, chunks (already deflated) do not.
 - Still to measure: several players, and Elios with Hodgepodge description batching on.
 
+### Results: Elios, 3 players, 30 min estimate and capture (2026-11-03)
+
+Daily 799, Galacticraft 3.4.35 (gear slot bug not fixed), Hodgepodge description batching on.
+`/neth estimate start all 1800` and `/neth capture start all 1800`, 12:26 to 12:56 (Schningman left after 22 min).
+No dropped frames. Server to client, per player, last column per tick on real server ticks (36k groups in 30 min).
+
+| Without `[GalacticraftCore]#0` | algent (34 MiB) | mamiemru (22 MiB) | Schningman (19 MiB, 22 min) |
+|---|---|---|---|
+| Per packet, 1.8 style | 4% | 5% | 5% |
+| Stream deflate L1, flush per packet | 48% | 64% | 57% |
+| Stream deflate L6, flush per packet | 50% | 66% | 59% |
+| Stream deflate L6 (estimate) / L3 (replay), flush per tick | 53% | 71% | 63% |
+| Stream zstd L3, flush per packet (replay) | 47% | 72% | 68% |
+| Stream zstd L3, flush per tick (replay) | 54% | 83% | 76% |
+
+- **The live estimate and the capture replay agree** to within 1 point on every shared strategy, so captures are a
+  faithful substitute and can be replayed with any algorithm later.
+- **Per player, without the GC bug: 11 to 19 KiB/s.** With it: 30 to 35 KiB/s; GC gear slot packets are still
+  46 to 59% of all bytes on daily 799.
+- **Stream compression saves 50 to 66% flushed per packet**, more than on the local endgame base (37%): the Elios
+  mix is more repetitive (Hodgepodge TE batches, Blood Magic, inventory and equipment updates) and has fewer chunks.
+- **1.8 style per packet is useless here** (4 to 5%): almost every packet is under 256 B or already compressed.
+- **zstd's larger window pays off on mixed traffic:** flushed per tick, zstd L3 beats deflate by 1 to 13 points
+  (54/83/76% vs 53/71/63%). Flushed per packet, it wins on two players and loses on one.
+- **Per-tick flushing adds 3 to 5 points with deflate and 7 to 12 with zstd** over the same algorithm per packet,
+  and costs less CPU.
+- **Other candidates for mod-side fixes** (not ours): `[BloodMagic]#0` about once per tick per player (74 B, 1.4 KiB/s),
+  `S04PacketEntityEquipment` up to 1.4 per tick (114 B average, 3 KiB/s for one player).
+
 ### Done when
 
 - [x] A real GTNH session gives a ratio table for each strategy (in-mod estimator, above; raw capture built since).
@@ -581,6 +610,10 @@ Things found while looking at GregTech, to fix there, not here:
 Found in Galacticraft and Hodgepodge (phase 0):
 
 - **GC:** `checkRenderGear` sends 9 `C_UPDATE_GEAR_SLOT` packets per player per tick to everyone within 50 blocks.
+  Fixed in a newer Galacticraft build (not in daily 799 yet).
+- **Blood Magic:** `[BloodMagic]#0`, about once per tick per player, 74 B (Elios, phase 2). Not investigated yet.
+- **Entity equipment:** `S04PacketEntityEquipment` up to 1.4 per tick to one player (Elios). Possibly an item whose
+  NBT changes every tick (charge, durability) on a nearby player. Not investigated yet.
 - **Hodgepodge:** `PooledGzipOutputStream` writes a wrong gzip trailer (CRC and size). `DeflaterOutputStream.write(int)`
   calls the overridden `write(byte[], int, int)`, so single-byte writes are counted twice. Harmless today because
   `PooledGzipInputStream` does not check the trailer, but any standard gzip reader rejects that NBT.
