@@ -697,6 +697,18 @@ framing layer), the client side sits after the splitter, and the mod stays optio
   The Elios captures still include the Galacticraft gear packets (daily 799), which compress very well, so they
   flatter the result. The endgame session is dominated by chunks, which stay raw.
 
+- **Local GTNH daily 804, real client** (2026-11-03, 1 player, loopback):
+  - A client without the mod joined and played normally, uncompressed (FML: "missing mods
+    [JourneyMapServer, networkhorizons]").
+  - With the mod: two sessions, plus a reconnect. Both sides logged the handshake, and there were no errors.
+  - Totals over the compressed sessions: 14.7 MiB sent as 11.0 MiB (75%). The compressible part went from 5.7 MiB
+    to 2.0 MiB (35%). The 9.0 MiB raw part is chunks: `S26PacketMapChunkBulk` alone was 44% of the traffic,
+    from moving around a lot.
+  - `wirestats.py`, steady state over 112 s: 29 S2C data segments/s (1.5 per tick, compared with 4.7 with
+    coalescing alone and 38 vanilla), 4.2% header overhead.
+  - **Takeaway:** once the rest is compressed, chunks are most of what is left. Vanilla deflates each chunk
+    packet on its own, with no history.
+
 ### Negotiation
 
 - FML's default version check guarantees the client has the mod with the same version
