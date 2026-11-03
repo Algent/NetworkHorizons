@@ -51,3 +51,17 @@ tasks.register<JavaExec>("codecReport") {
             .split(" ")
             .filter { it.isNotBlank() })
 }
+
+// Chunk data through the phase 4 stream, on captures: ./gradlew chunkReport -PchunkArgs="a.nhcap.gz"
+tasks.register<JavaExec>("chunkReport") {
+    group = "verification"
+    description = "Estimates sending chunk data through the phase 4 stream on NetworkHorizons captures"
+    classpath = jmh.runtimeClasspath
+    mainClass.set("dev.aruka.networkhorizons.codec.ChunkReport")
+    maxHeapSize = "2g"
+    args(
+        providers.gradleProperty("chunkArgs")
+            .getOrElse("")
+            .split(" ")
+            .filter { it.isNotBlank() })
+}

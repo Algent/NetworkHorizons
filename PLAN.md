@@ -738,6 +738,63 @@ framing layer), the client side sits after the splitter, and the mod stays optio
 - **Mods touching the pipeline.** Hodgepodge is known (see background). Finish the inventory over the
   full GTNH mod list before starting this phase.
 
+### Estimate: chunk data through the stream (2026-11-03)
+
+**Question:** would chunk packets compress better inside the stream than with vanilla's per-packet deflate?
+**Method:** chunk packets are rewritten with their data as stored (level 0) zlib, so the client still inflates
+them as usual and needs no change, and they go through the stream with everything else.
+**Tool:** `./gradlew chunkReport -PchunkArgs="<captures>"` (`ChunkReport`, jmh source set).
+
+- **Layout in GTNH** (ChunkAPI / EndlessIDs), read from the captures:
+  - S21 = x, z, groundUp, short bitmap, int raw length, int size, zlib;
+  - S26 = short count, count x int raw length, int size, bool skylight, zlib, then count x 10 bytes.
+  - Every chunk packet parsed.
+- **Chunk data is large and very compressible:** 135 to 298 MiB of raw data per 30 min Elios capture, and
+  142 MiB in 1.8 min of flying on the endgame map. Vanilla gets it to 1 to 3%.
+
+Wire MiB, every server to client play frame (A = chunks sent as they are today, beside the stream;
+B = chunks through the stream):
+
+| Scenario | algent 30 min | mamiemru 30 min | Schningman 22 min | endgame 1.8 min |
+|---|---|---|---|---|
+| A deflate-6 (shipped) | 16.4 | 7.1 | 7.7 | 5.2 |
+| B deflate-6 | 16.0 | 6.9 | 7.2 | 5.0 |
+| B deflate-1 | 20.7 | 8.1 | 8.8 | 6.8 |
+| A zstd-3 | 15.6 | 4.1 | 4.8 | 4.8 |
+| B zstd-3 | 15.9 | 3.4 | 3.7 | 4.9 |
+| A zstd-3, 8 MiB window | 15.5 | 4.0 | 4.7 | 4.8 |
+| B zstd-3, 8 MiB window | 15.9 | 2.8 | 2.8 | 4.7 |
+
+CPU, ms per minute of play for one connection. The stream column is compress / decompress.
+
+| Cost | algent | mamiemru | Schningman | endgame |
+|---|---|---|---|---|
+| A deflate-6 stream (shipped) | 19 / 1 | 20 / 2 | 22 / 2 | 72 / 4 |
+| B deflate-6 stream | 120 / 15 | 43 / 9 | 76 / 19 | 729 / 121 |
+| B zstd-3 stream | 14 / 5 | 4 / 1 | 5 / 2 | 59 / 29 |
+| Server: inflate vanilla chunk data + store it | 22 | 11 | 24 | 182 |
+| Server today: vanilla chunk deflate (could be skipped) | 105 | 24 | 54 | 626 |
+| Client: inflate stored chunk data | 3 | 1 | 3 | 22 |
+
+Per raw chunk byte: inflate 1.6 to 1.9 ns, store 0.4 to 0.5 ns, vanilla deflate 5 to 10 ns.
+
+- **With deflate: not worth it.** It gains 2 to 6% for 2 to 10 times the stream's CPU on both sides.
+  - Deflate's 32 KiB window is smaller than one chunk's raw data (25 KiB for an empty GTNH chunk, far more for
+    terrain). So the stream only redoes vanilla's per-chunk compression, with nothing from earlier chunks.
+- **With zstd and a large window, chunks that come back are almost free.** On mamiemru and Schningman, B saves
+  1.2 and 1.9 MiB, about all of their chunk bytes: chunks resent while moving around a base. On algent (new
+  terrain) and the endgame flight there is no gain, even a small loss.
+  - That is the phase 5 case (chunk reuse), and a large window costs memory on every connection (8 MiB of
+    window alone at window log 23).
+- **Converting on the server** (inflating vanilla's output, then storing it) costs about 2.3 ns per raw byte:
+  20 to 45% on top of the vanilla deflate it already pays. It stays inside the compressor (no chunk packet mixin,
+  so no clash with ChunkAPI / EndlessIDs), but it depends on their layout, with raw as the fallback.
+  - Skipping vanilla's deflate instead would save 5 to 10 ns per byte. But a chunk packet object is shared by
+    every player watching the chunk, and deflated once, so that only works when all of them are compressed.
+- **Zstd on the other packets alone** (A zstd-3) beats every deflate variant, chunks included: 0.8 to
+  3 MiB less per 30 min on Elios.
+- **Decision:** keep chunks raw with deflate. Revisit with zstd (large window) or phase 5.
+
 ### Later options
 
 - zstd (zstd-jni, flush per message) as a second `compression.codec` value: 0 to 11 points over deflate on Elios,
