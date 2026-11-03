@@ -518,12 +518,24 @@ Memory is process committed memory (native plus heap) over 256 live contexts aft
 ### Done when
 
 - [x] A real GTNH session gives a ratio table for each strategy (in-mod estimator, above; raw capture built since).
-- [ ] Decision recorded here: build phase 4 or not, with which algorithm and flush policy.
+- [x] Decision recorded here: build phase 4 or not, with which algorithm and flush policy.
+
+**Decision (2026-11-03): build phase 3, then phase 4 with JDK deflate, one compressed message per flush (per tick).**
+
+- Per tick, not per packet: smaller (3 to 5 points with deflate on Elios) and cheaper, and it comes for free
+  once phase 3 groups the writes of a tick into one flush.
+- Deflate first: 53 to 72% saved on Elios (Galacticraft bug excluded), no dependency, about 0.3 MiB per
+  connection on the server. CPU is negligible for every candidate.
+- Codec pluggable from the start, chosen by a server config value (`deflate` only at first), so zstd can be added
+  later (0 to 11 more points, 1.3 to 3.5 MiB per connection) once a shared zstd-jni exists, for example in GTNHExtLib.
+- LZ4 rejected (no streaming history in lz4-java, about 20% saved). Preset dictionaries rejected (no gain once the
+  stream keeps its context).
+- Server to client only: client to server is under 1 KiB/s.
 
 ## Phase 3: flush coalescing (server-only)
 
-Purpose: fewer syscalls and fewer TCP segments, no wire format change. Independent from phase 4:
-per-message compression does not depend on when Netty flushes, so this can ship (or be dropped) on its own numbers.
+Purpose: fewer syscalls and fewer TCP segments, no wire format change. Ships on its own numbers, and is also the
+base of phase 4: one flush per tick is what phase 4 compresses as one message.
 
 - Mixin in `NetworkManager.dispatchPacket` replaces `writeAndFlush` with `write`, and relies on the existing
   per-tick `channel.flush()` in `processReceivedPackets` (end of server tick, so little added latency).
@@ -546,16 +558,22 @@ Purpose: the actual bandwidth win, only if phase 2 says it is worth it.
 
 ### Design sketch
 
-Per-message compression with context takeover, like WebSocket permessage-deflate (RFC 7692):
+Per-flush compression with context takeover, like WebSocket permessage-deflate (RFC 7692), where the message is
+everything written between two flushes (one tick with phase 3):
 
-- Compress the **body of each frame**, between the encoder and the prepender (outbound), and between the
-  splitter and the decoder (inbound). The length prefix stays uncompressed.
-- **One deflate context per connection and direction**, kept for the whole session, so repeated structures
-  across small packets compress well.
-- **Flush and trim.** `SYNC_FLUSH` after each message, then strip the trailing `00 00 FF FF`;
-  the receiver appends it back before inflating.
-- **One flag byte per frame:** raw or compressed. Already compressed packets (chunk data) go raw and
-  do not enter the dictionary.
+- **An outer framing layer** between the vanilla framing and encryption. Outbound, after the prepender: each
+  written (already length-prefixed) packet goes into the deflater without flushing; on `flush()`, a `SYNC_FLUSH`
+  closes the message and one outer frame `[varint length][flag][deflate bytes]` is written. Inbound, before the
+  vanilla splitter: split outer frames, inflate, and pass the resulting vanilla frames on unchanged.
+- **One deflate context per connection**, kept for the whole session, so repeated structures across ticks compress
+  well (that history is the whole gain: 24 to 28% per tick alone, 52 to 72% with it, on Elios).
+- **Trim.** Strip the trailing `00 00 FF FF` of each sync flush; the receiver appends it back before inflating.
+- **Flag byte:** raw or compressed. A chunk packet (already deflated) closes the pending compressed message,
+  goes out as a raw outer frame, and stays out of the history. Order is kept.
+- **Codec and level from the server config** (`compression.codec = deflate`, `compression.level`, default 6;
+  CPU is negligible at every level), sent in the hello so the client builds the matching decoder.
+- **Placement:** the layer is added at the switch point (play state, after login), so the encryption handlers
+  added during login are already in place and end up outside it.
 - **Switch point.** The server sends an "enable" message on the NetworkHorizons channel. Its own encoder hook
   sees that packet go out (raw) and compresses every frame after it; same thread, so ordering is exact.
   On the client, our hook right after the decoder recognizes the message by channel name on the Netty thread
@@ -579,9 +597,10 @@ Per-message compression with context takeover, like WebSocket permessage-deflate
 
 ### Costs
 
-- **Memory:** about 256 KB per connection for a zlib deflater (default window and memLevel), about 40 KB
-  for an inflater. About 30 MB for 100 players, both directions. Lower memLevel trades ratio for memory.
-- **CPU:** runs on Netty IO threads. Use a configurable level, 1 to 3 to start.
+- **Memory:** measured 260 to 270 KiB per connection for the deflater on the server, 40 to 50 KiB for the inflater
+  on the client. About 27 MiB for 100 players (server to client only). Lower memLevel trades ratio for memory.
+- **CPU:** runs on Netty IO threads. Measured 12 to 17 ns/B to compress, about 1 ns/B to decompress: about 0.4 s
+  per player per 30 min at level 6.
 
 ### Risks
 
@@ -595,9 +614,10 @@ Per-message compression with context takeover, like WebSocket permessage-deflate
 
 ### Later options
 
-- zstd (streaming with flush per message) if phase 2 shows a clear win over deflate,
-  with natives bundled or optional.
-- Shared preset dictionary built from captured GTNH traffic.
+- zstd (zstd-jni, flush per message) as a second `compression.codec` value: 0 to 11 points over deflate on Elios,
+  at 1.3 MiB (L1) to 3.5 MiB (L3) per connection. Needs a shared, unrelocated zstd-jni (for example in GTNHExtLib)
+  so it does not clash with CubicChunks or other mods bundling it.
+- ~~Shared preset dictionary built from captured GTNH traffic.~~ No gain measured once the stream keeps its history.
 
 ### Testing
 
@@ -658,8 +678,8 @@ Found in Galacticraft and Hodgepodge (phase 0):
 
 - The full GTNH mod list, beyond the local Gradle cache: which mods add Netty handlers or touch the network classes?
 - Is a byte-level 1.7.10 packet profiler already floating around in the GTNH community?
-- Deflate only, or zstd too? Decided by phase 2 numbers.
-- Do we also compress client to server? Probably not worth it; phase 1 will tell.
+- ~~Deflate only, or zstd too?~~ Deflate first, zstd as a later config option (phase 2 decision).
+- ~~Do we also compress client to server?~~ No: under 1 KiB/s (phase 1 and 2 numbers).
 - Are proxies between client and server used at all in the GTNH community? Decides how much phase 4
   needs to care.
 - How big is the login cost (FML handshake and registry ID sync) for a GTNH client? Phase 0: about 4 MB,
