@@ -4,6 +4,9 @@ plugins {
 
 tasks.test.configure {
     useJUnitPlatform()
+    // private captures for CaptureRoundTripTest, opt-in
+    systemProperty("nh.captures", findProperty("captureDir")?.toString() ?: "")
+    maxHeapSize = "2g"
     testLogging {
         events("passed", "skipped", "failed")
     }

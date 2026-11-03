@@ -621,6 +621,82 @@ everything written between two flushes (one tick with phase 3):
 - **Stats see both sides.** Phase 1 counters keep counting uncompressed sizes, and a second counter records
   the compressed wire size, so `/neth stats` shows the actual saving per source.
 
+### Built (2026-11-03)
+
+Differs from the sketch above in three places: compressed messages are framed like vanilla frames (no outer
+framing layer), the client side sits after the splitter, and the mod stays optional on both sides.
+
+- **Wire.** A compressed message is a frame of its own, `[varint length][marker][deflate bytes]`, with the
+  `00 00 FF FF` sync flush tail removed. The marker is `0x80 | codec id` (`0x81` for deflate). A vanilla frame body
+  starts with a one-byte packet id below `0x80`, so raw frames go out unchanged, with no wrapping, and the
+  vanilla splitter on the client splits both kinds.
+- **Server: `FrameCompressor`**, between `prepender` and `encrypt`. Frames written between two flushes (one tick
+  with phase 3) go into one raw deflate stream per connection (`Deflater(level, nowrap)`, history kept), and leave
+  as one frame at the flush. Write promises complete when that frame is written. Sent raw, closing the pending
+  message first so order is kept:
+  - chunk packets (S21, S26);
+  - frames over 512 KiB;
+  - anything that is not exactly one frame.
+  A message is closed early past 1 MiB, so a compressed frame stays far below the 21-bit vanilla frame length.
+- **Client: `FrameDecompressor`**, between `splitter` and `decoder`, so it gets whole frame bodies and does not
+  care where encryption sits. It passes bodies through until it sees our START, then inflates frames with the
+  marker and passes their vanilla frame bodies to the decoder, one by one. Stats, estimate and capture still
+  see uncompressed bodies.
+  - **Safety:** inflating is capped at 4 MiB per frame. An unknown marker or corrupt data throws a
+    `DecoderException`, which closes the connection with that message.
+- **Handshake** on the `networkhorizons` channel, protocol 1:
+  1. At `PlayerLoggedInEvent`, the server sends HELLO (codec).
+  2. On the event loop, the client installs the decompressor, then answers REPLY (codec, or 0 to decline).
+  3. The server, on the event loop, writes START raw and then adds the compressor right behind it, so every frame
+     after START is compressed, and frames queued before it stay raw and go before it.
+  4. The client recognizes START by its bytes in the decompressor, not through FML, so the switch is exactly
+     between two frames.
+- **Sides.** `acceptableRemoteVersions = "*"` is kept. A client without the mod never answers HELLO, so it stays
+  uncompressed. A protocol mismatch logs a warning and does not compress, instead of disconnecting.
+- **Switches** (`compression` config category):
+  - `enabled` (server): the global kill switch. It also applies at runtime: frames go raw from then on.
+  - `codec` (only `DEFLATE` for now) and `level` (default 6).
+  - `excludedPlayers` (server): the per-player kill switch.
+  - `accept` (client): the client opt-out.
+  - Local (singleplayer) connections are never offered.
+- **Memory:** per connection, the deflater and the frames of the current tick. Work arrays are per IO thread.
+- **Stats:** `/neth stats` and `/nethc stats` add a line with sent/received bytes before and after,
+  compressed and raw, since start. `/neth reset` clears them.
+- **Tests** (`CompressionTest`):
+  - a round trip through the real vanilla splitter, with random frames, chunk and oversized frames, a tick over
+    1 MiB, and random read sizes;
+  - write promises completing;
+  - 500 random garbage frames failing only with `DecoderException`;
+  - an unknown marker;
+  - the inflate cap.
+- **`CaptureRoundTripTest`** (opt-in, `./gradlew test -PcaptureDir=<dir>`): replays the server to client play
+  frames of private captures through the real compressor, one message per capture tick, then back through the
+  vanilla splitter and the decompressor, and checks every frame.
+- **Not done yet:**
+  - a soak test with several players;
+  - proxy detection;
+  - the pipeline inventory of the full GTNH mod list.
+
+**Results (2026-11-03):**
+
+- **Dev server and dev client** (auto-connect, offline):
+  - HELLO, REPLY and START went through, and both sides logged the switch.
+  - Played about 60 s with no error, and left cleanly when the server stopped.
+  - `/neth stats`: sent 245.3 KiB as 128.9 KiB (52.5%). Of that, 227.9 KiB was compressed to 111.5 KiB, and
+    17.4 KiB went raw. A fresh flat world is mostly chunks and login data.
+- **Captures through the Java classes:** every frame came back identical. Wire is what is actually sent, raw
+  chunks included, as a share of the uncompressed size.
+
+  | Capture | Frames | Uncompressed | Wire | Share |
+  |---|---|---|---|---|
+  | Elios, algent, 30 min | 997,562 | 62.4 MiB | 16.4 MiB | 26.3% |
+  | Elios, mamiemru, 30 min | 1,045,435 | 53.6 MiB | 7.2 MiB | 13.3% |
+  | Elios, Schningman, 30 min | 756,905 | 42.6 MiB | 7.7 MiB | 18.1% |
+  | Local endgame, session 2 | 113,147 | 10.6 MiB | 5.1 MiB | 48.6% |
+
+  The Elios captures still include the Galacticraft gear packets (daily 799), which compress very well, so they
+  flatter the result. The endgame session is dominated by chunks, which stay raw.
+
 ### Negotiation
 
 - FML's default version check guarantees the client has the mod with the same version

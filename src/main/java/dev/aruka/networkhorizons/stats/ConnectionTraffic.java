@@ -29,6 +29,10 @@ public final class ConnectionTraffic {
 
     /** Player name once in play state on a server, remote address otherwise. */
     public String label() {
+        return label(channel);
+    }
+
+    public static String label(Channel channel) {
         Object handler = channel.pipeline()
             .get("packet_handler");
         if (handler instanceof NetworkManager

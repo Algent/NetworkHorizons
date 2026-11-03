@@ -17,7 +17,7 @@ import cpw.mods.fml.common.event.FMLServerAboutToStartEvent;
     acceptedMinecraftVersions = "[1.7.10]",
     dependencies = "required-after:gtnhlib@[0.11.54,)",
     guiFactory = "dev.aruka.networkhorizons.config.NetworkHorizonsGuiFactory",
-    // Optional on both sides: a server with the mod accepts vanilla-network clients and vice versa.
+    // Optional on both sides: compression is negotiated per connection, so clients without the mod join uncompressed.
     acceptableRemoteVersions = "*")
 public class NetworkHorizons {
 

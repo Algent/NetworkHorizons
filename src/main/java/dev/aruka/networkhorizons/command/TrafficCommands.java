@@ -15,6 +15,8 @@ import net.minecraft.util.EnumChatFormatting;
 
 import com.mojang.brigadier.Command;
 
+import dev.aruka.networkhorizons.compress.CompressionStats;
+import dev.aruka.networkhorizons.config.CompressionConfig;
 import dev.aruka.networkhorizons.config.FlushConfig;
 import dev.aruka.networkhorizons.config.StatsConfig;
 import dev.aruka.networkhorizons.estimate.EstimateReport;
@@ -79,6 +81,7 @@ public final class TrafficCommands {
                     flushes,
                     flushes == 0 ? 0 : (double) deferred / flushes));
         }
+        send(sender, EnumChatFormatting.GRAY + compression(client, player));
         String peer = client ? "server" : player != null ? player : "clients";
         // larger direction first: what the server sends, what the client receives
         Direction[] order = client ? new Direction[] { Direction.IN, Direction.OUT }
@@ -119,6 +122,44 @@ public final class TrafficCommands {
         return Command.SINGLE_SUCCESS;
     }
 
+    static String compression(boolean client, String player) {
+        Direction dir = client ? Direction.IN : Direction.OUT;
+        CompressionStats sum = CompressionStats.sum(dir);
+        int connections = 0;
+        for (CompressionStats s : CompressionStats.live(dir)) {
+            if (player != null && !ConnectionTraffic.label(s.channel)
+                .equalsIgnoreCase(player)) continue;
+            sum.add(s);
+            connections++;
+        }
+        if (player == null) sum.add(CompressionStats.closed(dir));
+        String head;
+        if (client) {
+            head = "Compression " + (connections > 0 ? "on" : "off");
+        } else {
+            head = String.format(
+                Locale.ROOT,
+                "Compression %s (%s level %d), on for %d connection(s)",
+                CompressionConfig.enabled ? "enabled" : "disabled",
+                CompressionConfig.codec.label(),
+                CompressionConfig.level,
+                connections);
+        }
+        if (sum.messages == 0 && sum.raw == 0) return head;
+        long before = sum.uncompressed + sum.raw, after = sum.compressed + sum.raw;
+        return String.format(
+            Locale.ROOT,
+            "%s: %s %s as %s (%.1f%%), %s compressed to %s, %s raw, since start",
+            head,
+            client ? "received" : "sent",
+            TrafficReport.formatBytes(before),
+            TrafficReport.formatBytes(after),
+            before == 0 ? 0 : 100.0 * after / before,
+            TrafficReport.formatBytes(sum.uncompressed),
+            TrafficReport.formatBytes(sum.compressed),
+            TrafficReport.formatBytes(sum.raw));
+    }
+
     public static int dump(ICommandSender sender, boolean client, File baseDir) {
         try {
             File dir = new File(baseDir, "networkhorizons");
@@ -138,6 +179,7 @@ public final class TrafficCommands {
 
     public static int reset(ICommandSender sender) {
         TrafficRecorder.reset();
+        CompressionStats.reset();
         send(sender, "Traffic stats reset");
         return Command.SINGLE_SUCCESS;
     }

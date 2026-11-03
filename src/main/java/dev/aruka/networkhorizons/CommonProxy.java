@@ -10,7 +10,9 @@ import cpw.mods.fml.common.event.FMLPostInitializationEvent;
 import cpw.mods.fml.common.event.FMLPreInitializationEvent;
 import cpw.mods.fml.common.event.FMLServerAboutToStartEvent;
 import dev.aruka.networkhorizons.command.NetworkHorizonsCommand;
+import dev.aruka.networkhorizons.compress.CompressionHandshake;
 import dev.aruka.networkhorizons.config.CaptureConfig;
+import dev.aruka.networkhorizons.config.CompressionConfig;
 import dev.aruka.networkhorizons.config.EstimatorConfig;
 import dev.aruka.networkhorizons.config.FlushConfig;
 import dev.aruka.networkhorizons.config.StatsConfig;
@@ -23,6 +25,7 @@ public class CommonProxy {
             ConfigurationManager.registerConfig(EstimatorConfig.class);
             ConfigurationManager.registerConfig(CaptureConfig.class);
             ConfigurationManager.registerConfig(FlushConfig.class);
+            ConfigurationManager.registerConfig(CompressionConfig.class);
         } catch (ConfigException e) {
             throw new RuntimeException(e);
         }
@@ -30,7 +33,9 @@ public class CommonProxy {
         NetworkHorizons.LOG.info("NetworkHorizons version " + Tags.VERSION);
     }
 
-    public void init(FMLInitializationEvent event) {}
+    public void init(FMLInitializationEvent event) {
+        CompressionHandshake.register();
+    }
 
     public void postInit(FMLPostInitializationEvent event) {}
 
