@@ -569,6 +569,27 @@ base of phase 4: one flush per tick is what phase 4 compresses as one message.
 - To do on a real GTNH session: `wirestats.py` on a pcap with `flush.coalesce=false` then `true`
   (Elios phase 0: about 20 segments per tick), the packets per flush from `/neth stats`, and ping.
 
+**Results (2026-11-03, local GTNH daily 804, 1 player, loopback, about 2.3 min each, steady state):**
+
+| | coalesce off | coalesce on |
+|---|---|---|
+| S2C payload | 64.3 KiB/s | 72.7 KiB/s |
+| S2C wire (with headers) | 98.4 KiB/s | 78.0 KiB/s |
+| S2C header overhead | 34.6% | 6.8% |
+| S2C data segments | 759/s (38 per tick) | 94/s (4.7 per tick) |
+| S2C segment payload p50 / under 100 B | 30 B / 92% | 449 B / 6% |
+| C2S frames (mostly ACKs) | 794/s, 36.8 KiB/s | 124/s, 7.9 KiB/s |
+| Wire, both directions | 135.2 KiB/s | 85.9 KiB/s (-36%) |
+
+- `/neth stats` (222 s): 303,603 packets deferred, 5,947 flushes, 51.1 packets per flush, about 1.3 flushes per tick.
+- The about 3.4 other segments per tick come from sends that are not deferred (off-thread, with listeners) and
+  chunk bursts; not broken down yet.
+- Play felt the same; ping not measured.
+- One `Connection reset` on the server in a coalesce-on session: the client window was closed while in the
+  world (client log goes straight to `Stopping!`), so Windows reset the socket with unread data. Clean
+  disconnects in the other sessions logged `Disconnected`. Not caused by coalescing.
+- `wirestats.py` falls back to `--server-port` (default 25565) when a capture starts without the SYN.
+
 ## Phase 4: stream compression (both sides, negotiated)
 
 Purpose: the actual bandwidth win, only if phase 2 says it is worth it.

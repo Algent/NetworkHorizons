@@ -9,7 +9,7 @@ import statistics
 from mcframes import tshark_fields
 
 
-def load(pcap):
+def load(pcap, default_port):
     rows = tshark_fields(pcap, "tcp", ["tcp.stream", "frame.time_relative", "tcp.srcport", "tcp.dstport", "frame.len",
                                        "tcp.len", "tcp.analysis.retransmission", "tcp.flags.syn", "tcp.flags.ack"])
     by_stream = collections.defaultdict(list)
@@ -19,7 +19,8 @@ def load(pcap):
             server_port[st] = dport
         by_stream[st].append((float(t), sport, int(flen), int(tlen or 0), retx != ""))
     st = max(by_stream, key=lambda k: sum(r[2] for r in by_stream[k]))
-    port = server_port.get(st)
+    # no SYN when the capture starts mid-connection
+    port = server_port.get(st, default_port)
     return [(t, "S2C" if sport == port else "C2S", flen, tlen, retx) for t, sport, flen, tlen, retx in by_stream[st]]
 
 
@@ -60,9 +61,10 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("pcap")
     p.add_argument("--login-seconds", type=float, default=2)
+    p.add_argument("--server-port", default="25565", help="used when the capture has no SYN")
     a = p.parse_args()
 
-    rows = load(a.pcap)
+    rows = load(a.pcap, a.server_port)
     t0 = next(r[0] for r in rows if r[3] > 0)
     for name, rs in (("LOGIN", [r for r in rows if r[0] - t0 < a.login_seconds]),
                      ("STEADY", [r for r in rows if r[0] - t0 >= a.login_seconds])):
