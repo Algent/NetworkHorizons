@@ -548,9 +548,26 @@ base of phase 4: one flush per tick is what phase 4 compresses as one message.
 - GTNH already runs with `TCP_NODELAY = true` (Hodgepodge), so batching is the only thing grouping packets.
   Phase 0 shows ~20 segments per tick that this would merge into one or two.
 
+**Built (2026-11-03):**
+
+- `MixinNetworkManager_CoalesceFlush`: at the head of `dispatchPacket`, a packet that passes
+  `FlushCoalescer.shouldDefer` is written with `write` instead of `writeAndFlush` (same event loop task as vanilla's
+  off-thread branch), and the connection is marked pending. Everything else runs vanilla's code untouched.
+- Deferred only when all hold: `flush.coalesce` on, server side, not a local channel, no future listeners,
+  sent from the server thread, connection in play state, and the packet a play packet or an FML proxy packet
+  (so never a state change).
+- Flushes: vanilla's per-connection `channel.flush()` at the end of `processReceivedPackets` (network tick), plus
+  one at the end of `MinecraftServer.tick` for connections written to after it (mods' post-tick handlers), so no
+  packet waits for the next tick. At most two flushes per connection per tick.
+- Hodgepodge's time budget on `processReceivedPackets` only bounds the receive loop; the flush still runs.
+- `/neth stats` shows the deferred packet and flush counts. Unit tests cover the rules and the flush bookkeeping;
+  the dev server run (keep-alives only) shows deferred packets leaving at the tick flush.
+
 ### Measure
 
 - Flushes per second, syscalls, TCP segments (pcap), and ping before and after.
+- To do on a real GTNH session: `wirestats.py` on a pcap with `flush.coalesce=false` then `true`
+  (Elios phase 0: about 20 segments per tick), the packets per flush from `/neth stats`, and ping.
 
 ## Phase 4: stream compression (both sides, negotiated)
 

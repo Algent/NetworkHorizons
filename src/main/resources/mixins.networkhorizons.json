@@ -7,6 +7,8 @@
   "mixins": [
     "MixinMessageDeserializer",
     "MixinMessageSerializer",
+    "MixinMinecraftServer_CoalesceFlush",
+    "MixinNetworkManager_CoalesceFlush",
     "S3FPacketCustomPayloadAccessor"
   ],
   "client": [],

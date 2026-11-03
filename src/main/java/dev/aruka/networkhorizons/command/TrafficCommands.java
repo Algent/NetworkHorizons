@@ -15,8 +15,10 @@ import net.minecraft.util.EnumChatFormatting;
 
 import com.mojang.brigadier.Command;
 
+import dev.aruka.networkhorizons.config.FlushConfig;
 import dev.aruka.networkhorizons.config.StatsConfig;
 import dev.aruka.networkhorizons.estimate.EstimateReport;
+import dev.aruka.networkhorizons.flush.FlushCoalescer;
 import dev.aruka.networkhorizons.stats.ConnectionTraffic;
 import dev.aruka.networkhorizons.stats.Direction;
 import dev.aruka.networkhorizons.stats.TrafficRecorder;
@@ -64,6 +66,19 @@ public final class TrafficCommands {
         }
         send(sender, header + ", " + window.id + " (" + seconds + "s)");
         if (!StatsConfig.enabled) send(sender, EnumChatFormatting.RED + "Stats are disabled in the config");
+        if (!client) {
+            long deferred = FlushCoalescer.deferredPackets(), flushes = FlushCoalescer.flushes();
+            send(
+                sender,
+                String.format(
+                    Locale.ROOT,
+                    "%sFlush coalescing %s: %d packets deferred, %d flushes (%.1f packets per flush) since start",
+                    EnumChatFormatting.GRAY,
+                    FlushConfig.coalesce ? "on" : "off",
+                    deferred,
+                    flushes,
+                    flushes == 0 ? 0 : (double) deferred / flushes));
+        }
         String peer = client ? "server" : player != null ? player : "clients";
         // larger direction first: what the server sends, what the client receives
         Direction[] order = client ? new Direction[] { Direction.IN, Direction.OUT }
