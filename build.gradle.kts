@@ -12,6 +12,24 @@ tasks.test.configure {
     }
 }
 
+// Dev only, see launcher/README.md: ./gradlew runServer|runClient|runServer25|runClient25|test
+// -PnettyOverride=4.0.56.Final [-PnettyNoUnsafe=false|unset]. The run tasks include the modern Java ones
+// (runServer17/21/25, runClient17/21/25).
+providers.gradleProperty("nettyOverride").orNull?.let { version ->
+    val netty = configurations.detachedConfiguration(dependencies.create("io.netty:netty-all:$version"))
+    val noUnsafe = providers.gradleProperty("nettyNoUnsafe").getOrElse("true")
+    val runTask = Regex("run(Server|Client)(17|21|25)?")
+    tasks.matching { runTask.matches(it.name) }.configureEach {
+        this as JavaExec
+        classpath = files(netty) + classpath
+        if (noUnsafe != "unset") jvmArgs("-Dio.netty.noUnsafe=$noUnsafe")
+    }
+    tasks.test.configure {
+        classpath = files(netty) + classpath
+        if (noUnsafe != "unset") systemProperty("io.netty.noUnsafe", noUnsafe)
+    }
+}
+
 // JMH benchmarks, never part of the mod jar: ./gradlew jmh [-PjmhArgs="RecordBenchmark -prof gc"]
 val jmh: SourceSet by sourceSets.creating {
     compileClasspath += sourceSets.main.get().output + sourceSets.test.get().compileClasspath

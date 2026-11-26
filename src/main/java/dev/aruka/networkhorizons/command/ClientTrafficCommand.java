@@ -69,6 +69,9 @@ public class ClientTrafficCommand extends GTNHClientCommand {
                     CaptureCommands.show(sender, true);
                 }
                 break;
+            case "info":
+                TrafficCommands.info(sender, true);
+                break;
             case "dump":
                 TrafficCommands.dump(sender, true, Minecraft.getMinecraft().mcDataDir);
                 break;
@@ -84,7 +87,7 @@ public class ClientTrafficCommand extends GTNHClientCommand {
     @SuppressWarnings("rawtypes")
     public List addTabCompletionOptions(ICommandSender sender, String[] args) {
         if (args.length == 1)
-            return getListOfStringsMatchingLastWord(args, "stats", "estimate", "capture", "dump", "reset");
+            return getListOfStringsMatchingLastWord(args, "stats", "estimate", "capture", "info", "dump", "reset");
         if (args.length == 2 && ("estimate".equals(args[0]) || "capture".equals(args[0])))
             return getListOfStringsMatchingLastWord(args, "start", "stop");
         if ("stats".equals(args[0])) {

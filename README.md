@@ -6,7 +6,9 @@ The idea is to measure first, then optimize: find out where the bytes go (per pa
 per player), estimate what compression would gain on real traffic, and only then change what goes over
 the wire, in steps the server can switch off.
 
-See [PLAN.md](PLAN.md) for the phases, design notes and open questions.
+See [PLAN.md](PLAN.md) for the phases, design notes and open questions, and [NETTY.md](NETTY.md) for how
+Netty 4.0.10 (shipped with 1.7.10) compares with 4.0.56 and 4.2.21. The optional, experimental Netty 4.0.56
+override is described in [launcher/README.md](launcher/README.md).
 
 ## Status
 

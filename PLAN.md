@@ -822,6 +822,9 @@ Purpose: avoid resending chunks a client already has (revisits, reconnects).
 Purpose: about 12 years of Netty fixes and performance (epoll/io_uring transports, allocators).
 No bandwidth gain by itself.
 
+See [NETTY.md](NETTY.md) (2026-11-26): the 4.0.10 bugs on our paths, and 4.0.56 as a near drop-in first step
+(same `ByteBuf` abstract methods, `AttributeKey(String)` still public).
+
 Known breakages with Netty 4.1+:
 
 - **`AttributeKey` constructor.** `new AttributeKey(String)` is used by vanilla (`NetworkManager`) and FML
@@ -836,6 +839,80 @@ Known breakages with Netty 4.1+:
   for both Java 8 and Java 17+ launch paths.
 
 Must stay a separate, opt-in module, so a Netty problem never disables phases 1 to 4.
+
+### Small step first: Netty 4.0.56 override (prototype 2026-10-30, ported onto phases 1 to 4 on 2026-11-26)
+
+The last 4.0.x release instead of 4.1: same API line, none of the 4.1 breakages above, and the main 4.0.10 bugs
+fixed (see NETTY.md). See `launcher/README.md`.
+
+- **Swapped at launch, not by the mod.** A Prism/MultiMC component (`launcher/prism/patches/`) brings
+  `io.netty:netty-all:4.0.56.Final`: Prism keeps one copy per library and a strictly newer version from a later
+  component replaces it, on Java 8 and lwjgl3ify instances alike. It also adds `-Dio.netty.noUnsafe=true`.
+  Dedicated servers: Netty 4.0.10 is bundled inside `minecraft_server.1.7.10.jar`, so the 4.0.56 jar goes first
+  on `-cp` (start line with the main class instead of `-jar`).
+- **Carriers.** lwjgl3ify is not in the Java 8 client and server builds, so it cannot carry the swap on its own.
+  Java 8 servers stay needed (Thermos and other environments, hosts that force Java 8), so the start script route
+  stays a first-class path.
+- **Not fully binary compatible.** `tools/nettylink` scans every `io/netty` reference against a Netty jar.
+  On GTNH daily 804 (vanilla, Forge, lwjgl3ify, all mods of the 4 packs, 348k classes) against 4.0.56: two breaks.
+  `ChannelInboundInvoker` / `ChannelOutboundInvoker` were removed, so FML's `NetworkDispatcher.read` (`ctx.read()`)
+  throws `NoSuchMethodError` on every modded login; and Forestry reads the removed `EmptyArrays.EMPTY_INTS`.
+- **NetworkHorizons relinks them.** A coremod entry point (`NetworkHorizonsCore`) registers `NettyLinkFixer`
+  only when a newer Netty is on the classpath: it rewrites those return types to the receiver's type and the
+  removed `EmptyArrays` fields to `NettyCompat`. So the override requires the mod on that side.
+  `NettyLinkFixer` skips our own classes, so our jar must link cleanly by itself (checked below).
+- **`-Dio.netty.noUnsafe=true` must be a JVM argument** (decided 2026-11-26, replaces `noPreferDirect`).
+  - Why a flag at all: since 4.0.37, `readBytes(int)` allocates with the source buffer's allocator (4.0.10 always
+    returned a heap buffer). Vanilla's `PacketBuffer.readStringFromBuffer` and 11 files in 9 GTNH mods call
+    `readBytes(n).array()`, which throws on a direct buffer.
+  - Why `noUnsafe`: on Java 25, 4.0.56 finds `sun.misc.Unsafe` (stock 4.0.10 does not, on any Java 9+), so without a
+    flag it prefers direct buffers on every Java. Without Unsafe it never does, and it never calls the Unsafe
+    memory-access methods the JDK is phasing out (warning since Java 24). That is the mode stock 4.0.10 already runs
+    on Java 17+, now on every Java; Java 8 changes mode (stock used Unsafe and direct buffers there).
+    `noPreferDirect` also fixes `array()` but keeps Unsafe on heap buffers, a mode no GTNH setup runs. Costs and
+    details in `launcher/README.md`.
+  - In GTNH, FalsePattern's dependency loader uses Netty during coremod discovery, which initializes
+    `PlatformDependent` before any mod code: setting the property from the mod is too late (tried from a mixin
+    plugin). The mod logs an error at startup when Netty prefers direct buffers, and a warning when it still uses
+    Unsafe.
+- `/neth info` and `/nethc info` (and the startup log) show the Netty version, the jar it came from, whether it uses
+  Unsafe and whether direct buffers are preferred.
+- **Checked 2026-10-30:** dev server with a bot (stock, 4.0.56, 4.0.56 without the flag), and booting the real
+  J8 and J17 daily 804 servers with the override up to the EULA check (mods load before it).
+- **Checked 2026-11-26, after porting onto phases 1 to 4:**
+  - Unit tests pass on stock Netty and with 4.0.56 first on the test classpath
+    (`./gradlew test -PnettyOverride=4.0.56.Final`; a probe confirmed 4.0.56 was the one loaded). That includes
+    `CompressionTest`, which drives the real vanilla splitter.
+  - `tools/nettylink` on the shipped jar against 4.0.56: clean. The only hit, `EventLoop.execute`, is inherited
+    from the JDK and shows up against 4.0.10 too.
+  - Mixins into Netty classes, which `tools/nettylink` cannot see, checked with `javap` on both jars: BugTorch's
+    `NioSocketChannel.doWrite` overwrite and ArchaicFix's `EmbeddedChannel` mixin find all their targets in 4.0.56;
+    Hodgepodge's `Bootstrap.checkAddress` exists in neither version. BugTorch's overwrite puts the 4.0.10 write loop
+    back in place of 4.0.56's, and with phase 3 it is the busy write path.
+  - Dev server and dev client, both on 4.0.56 with `noPreferDirect` (the flag at the time), Java 8 (`runServer` /
+    `runClient`, auto-connect, offline), about 10 minutes in the world:
+    - `NetworkDispatcher` relinked on both sides at the first connection, then a normal modded login on both sides;
+    - flush coalescing on (141,056 packets deferred, 12.6 packets per flush) and compression on (1.9 MiB sent as
+      1.2 MiB);
+    - no Netty warning or error after startup. BugTorch, ArchaicFix and Hodgepodge are not in the dev environment.
+  - The same on Java 25 (`runServer25` / `runClient25`, JetBrains Runtime 25.0.4, lwjgl3ify 3.0.33 and
+    Hodgepodge 2.7.206 on both sides), about 2 minutes in the world:
+    - `NetworkDispatcher` relinked on both sides, normal modded login, flush coalescing (9.6 packets per flush)
+      and compression on;
+    - no warning or error after the client connected. Hodgepodge's `netty.MixinBootstrap` is loaded with its
+      config but never applies (its target does not exist), as on 4.0.10;
+    - each side prints the JDK's "terminally deprecated method in sun.misc.Unsafe" warning once at startup, from
+      Netty's `PlatformDependent0`. This is what led to `noUnsafe`.
+  - Both pairs again with `noUnsafe` (Java 8 and Java 25, about 1 minute in the world each):
+    - startup line `Unsafe: false, direct buffers preferred: false` on all four sides, and no flag warning from the
+      mod;
+    - relink, modded login, flush coalescing (15.0 and 12.3 packets per flush) and compression on, with no warning
+      or error after the client connected;
+    - on Java 25 the server no longer prints the Unsafe warning. The client still does once, from GTNHLib's
+      `MemoryUtilities`, not from Netty.
+- **Not checked yet:** the full pack (with BugTorch and ArchaicFix), singleplayer (LocalChannel changed a lot in
+  4.0.31, and ArchaicFix's login fix is tuned to 4.0.10), several players logging in at once, Prism applying the
+  component, the real server start lines, long sessions, Thermos, and BugTorch on and off with phase 3.
 
 ## Out of scope (belongs in the mods themselves)
 

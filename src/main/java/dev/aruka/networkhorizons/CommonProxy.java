@@ -16,6 +16,7 @@ import dev.aruka.networkhorizons.config.CompressionConfig;
 import dev.aruka.networkhorizons.config.EstimatorConfig;
 import dev.aruka.networkhorizons.config.FlushConfig;
 import dev.aruka.networkhorizons.config.StatsConfig;
+import dev.aruka.networkhorizons.core.NettyEnvironment;
 
 public class CommonProxy {
 
@@ -31,6 +32,22 @@ public class CommonProxy {
         }
 
         NetworkHorizons.LOG.info("NetworkHorizons version " + Tags.VERSION);
+        NetworkHorizons.LOG.info(NettyEnvironment.describe());
+        if (NettyEnvironment.missingNoUnsafe()) {
+            if (NettyEnvironment.directBufferPreferred()) {
+                NetworkHorizons.LOG.error(
+                    "Netty {} prefers direct buffers: add -D{}=true to the JVM arguments, or vanilla string reads"
+                        + " (readBytes(n).array()) fail (see the NetworkHorizons launcher README)",
+                    NettyEnvironment.version(),
+                    NettyEnvironment.NO_UNSAFE);
+            } else {
+                NetworkHorizons.LOG.warn(
+                    "Netty {} uses sun.misc.Unsafe: add -D{}=true to the JVM arguments"
+                        + " (see the NetworkHorizons launcher README)",
+                    NettyEnvironment.version(),
+                    NettyEnvironment.NO_UNSAFE);
+            }
+        }
     }
 
     public void init(FMLInitializationEvent event) {

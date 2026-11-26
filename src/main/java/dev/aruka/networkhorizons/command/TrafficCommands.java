@@ -15,10 +15,12 @@ import net.minecraft.util.EnumChatFormatting;
 
 import com.mojang.brigadier.Command;
 
+import dev.aruka.networkhorizons.Tags;
 import dev.aruka.networkhorizons.compress.CompressionStats;
 import dev.aruka.networkhorizons.config.CompressionConfig;
 import dev.aruka.networkhorizons.config.FlushConfig;
 import dev.aruka.networkhorizons.config.StatsConfig;
+import dev.aruka.networkhorizons.core.NettyEnvironment;
 import dev.aruka.networkhorizons.estimate.EstimateReport;
 import dev.aruka.networkhorizons.flush.FlushCoalescer;
 import dev.aruka.networkhorizons.stats.ConnectionTraffic;
@@ -177,6 +179,14 @@ public final class TrafficCommands {
         return Command.SINGLE_SUCCESS;
     }
 
+    /** Mod version, side and the Netty actually loaded (see launcher/README.md). */
+    public static int info(ICommandSender sender, boolean client) {
+        String tag = client ? EnumChatFormatting.AQUA + "[NetH client] " : EnumChatFormatting.GOLD + "[NetH server] ";
+        send(sender, tag + "NetworkHorizons " + Tags.VERSION);
+        send(sender, NettyEnvironment.describe());
+        return Command.SINGLE_SUCCESS;
+    }
+
     public static int reset(ICommandSender sender) {
         TrafficRecorder.reset();
         CompressionStats.reset();
@@ -195,7 +205,7 @@ public final class TrafficCommands {
             + estimate
             + " | "
             + capture
-            + " | dump | reset";
+            + " | info | dump | reset";
     }
 
     public static List<String> connectionLabels() {
